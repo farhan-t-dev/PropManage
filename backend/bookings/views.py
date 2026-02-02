@@ -88,6 +88,37 @@ class BookingViewSet(viewsets.ModelViewSet):
         
         return Response(formatted_data)
 
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def confirm(self, request, pk=None):
+        booking = self.get_object()
+        if booking.property.owner != request.user:
+            return Response({"detail": "You do not have permission to confirm this booking."},
+                            status=status.HTTP_403_FORBIDDEN)
+        
+        if booking.status != 'pending':
+            return Response({"detail": f"Booking cannot be confirmed from status: {booking.status}"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        booking.status = 'confirmed'
+        booking.save()
+        return Response(BookingSerializer(booking).data)
+
+    @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
+    def cancel(self, request, pk=None):
+        booking = self.get_object()
+        # Tenant can cancel their own, Landlord can cancel for their property
+        if booking.tenant != request.user and booking.property.owner != request.user:
+            return Response({"detail": "You do not have permission to cancel this booking."},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        if booking.status == 'cancelled':
+            return Response({"detail": "Booking is already cancelled."},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        booking.status = 'cancelled'
+        booking.save()
+        return Response(BookingSerializer(booking).data)
+
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def download_bookings_csv(self, request):
         """

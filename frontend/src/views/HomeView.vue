@@ -28,10 +28,10 @@ const auth = useAuthStore()
           <h3 class="text-lg font-semibold mb-2">🏘️ View Properties</h3>
           <p class="text-sm text-gray-500">Browse and book available properties.</p>
         </router-link>
-        <div class="border border-gray-200 rounded-lg p-6 hover:border-indigo-500 transition-colors cursor-pointer text-left">
+        <router-link to="/my-bookings" class="border border-gray-200 rounded-lg p-6 hover:border-indigo-500 transition-colors cursor-pointer text-left block">
           <h3 class="text-lg font-semibold mb-2">🗓️ My Bookings</h3>
           <p class="text-sm text-gray-500">Manage your existing reservations and status.</p>
-        </div>
+        </router-link>
       </div>
     </div>
   </div>

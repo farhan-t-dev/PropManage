@@ -2,10 +2,12 @@ from rest_framework import serializers
 from .models import Booking
 from properties.serializers import PropertySerializer
 from users.serializers import UserSerializer
+from billing.serializers import InvoiceSerializer
 
 class BookingSerializer(serializers.ModelSerializer):
     property_details = PropertySerializer(source='property', read_only=True)
     tenant_details = UserSerializer(source='tenant', read_only=True)
+    invoice = InvoiceSerializer(read_only=True)
 
     class Meta:
         model = Booking

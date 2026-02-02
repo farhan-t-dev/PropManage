@@ -57,10 +57,11 @@ We will follow a **Headless Architecture** pattern.
 
 ### Phase 2: The Core Logic (Complex Backend)
 **Goal:** Handle the "business" of property management.
-- [ ] **Booking Algorithm:** Write the service layer to check availability (`is_available(property, start, end)`).
-- [ ] **Celery Setup:** Configure Celery worker.
-- [ ] **Background Task:** `send_confirmation_email` task triggered on booking creation.
-- [ ] **Unit Tests:** Test the availability logic edge cases (overlapping dates).
+- [x] **Booking Algorithm:** Write the service layer to check availability (`is_available(property, start, end)`).
+- [x] **Celery Setup:** Configure Celery worker.
+- [x] **Background Task:** `send_confirmation_email` task triggered on booking creation.
+- [x] **Unit Tests:** Test the availability logic edge cases (overlapping dates).
+- [x] **Automated Invoicing:** Generate invoices via Celery/Signals when bookings are confirmed.
 
 ### Phase 3: The Frontend Shell (Vue.js Setup)
 **Goal:** A clean UI that talks to the API.
@@ -70,16 +71,17 @@ We will follow a **Headless Architecture** pattern.
 
 ### Phase 4: Feature Integration
 **Goal:** Connect Front and Back.
-- [ ] **Dashboard:** Landlord view (My Properties) vs Tenant view (My Bookings).
-- [ ] **Booking Flow:** Calendar UI to select dates -> POST /api/bookings/.
-- [ ] **Real-time Feedback:** Toast notifications on success/error.
+- [x] **Dashboard:** Landlord view (My Properties) vs Tenant view (My Bookings).
+- [x] **Booking Flow:** Calendar UI to select dates -> POST /api/bookings/.
+- [x] **Real-time Feedback:** Toast notifications on success/error.
+- [x] **Booking Management:** Landlords can confirm/cancel bookings from their dashboard.
 
 ### Phase 5: The "Showcase" Features (Advanced)
 **Goal:** Prove seniority.
-- [ ] **Data Viz:** Add a chart to Landlord Dashboard showing "Monthly Revenue" (Chart.js).
-- [ ] **Report Export:** Button to "Download CSV" (Backend generates it via Pandas + Celery, returns download link).
-- [ ] **Optimized Deployment:** Docker Compose for production (Nginx serving static files).
-
+- [x] **Data Viz:** Add a chart to Landlord Dashboard showing "Monthly Revenue" (Chart.js).
+- [x] **Report Export:** Button to "Download CSV" (Backend generates it via Streaming Response).
+- [x] **Optimized Deployment:** Docker Compose for production (Nginx serving static files).
+- [x] **Seed Data:** Comprehensive seed command with historical data for immediate visualization.
 ---
 
 ## 4. Immediate Next Steps

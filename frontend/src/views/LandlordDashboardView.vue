@@ -1,12 +1,14 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { useAuthStore } from '../stores/auth'
+import { useNotificationStore } from '../stores/notifications' // Added
 import axios from 'axios'
-import PropertyCard from '../components/PropertyCard.vue' // Assuming PropertyCard is reusable
-import { Chart, registerables } from 'chart.js'; // Import Chart.js
-Chart.register(...registerables); // Register all components from Chart.js
+import PropertyCard from '../components/PropertyCard.vue' 
+import { Chart, registerables } from 'chart.js'; 
+Chart.register(...registerables); 
 
 const authStore = useAuthStore()
+const notificationStore = useNotificationStore() // Added
 const myProperties = ref([])
 const myPropertiesBookings = ref([])
 const monthlyRevenueData = ref({ labels: [], datasets: [] })
@@ -111,6 +113,49 @@ const downloadReport = async () => {
     console.error('Error downloading report:', err)
     // You might want to use your notification store here
     alert('Failed to download report.') 
+  }
+}
+
+const confirmBooking = async (bookingId) => {
+  try {
+    await axios.post(`http://localhost:8000/api/bookings/${bookingId}/confirm/`, {}, {
+      headers: {
+        Authorization: `Bearer ${authStore.accessToken}`
+      }
+    })
+    notificationStore.showNotification('Booking confirmed successfully!', 'success')
+    // Refresh bookings
+    const bookingsResponse = await axios.get('http://localhost:8000/api/bookings/my_properties_bookings/', {
+      headers: {
+        Authorization: `Bearer ${authStore.accessToken}`
+      }
+    })
+    myPropertiesBookings.value = bookingsResponse.data
+  } catch (err) {
+    console.error('Error confirming booking:', err)
+    notificationStore.showNotification('Failed to confirm booking.', 'error')
+  }
+}
+
+const cancelBooking = async (bookingId) => {
+  if (!confirm('Are you sure you want to cancel this booking?')) return
+  try {
+    await axios.post(`http://localhost:8000/api/bookings/${bookingId}/cancel/`, {}, {
+      headers: {
+        Authorization: `Bearer ${authStore.accessToken}`
+      }
+    })
+    notificationStore.showNotification('Booking cancelled successfully.', 'success')
+    // Refresh bookings
+    const bookingsResponse = await axios.get('http://localhost:8000/api/bookings/my_properties_bookings/', {
+      headers: {
+        Authorization: `Bearer ${authStore.accessToken}`
+      }
+    })
+    myPropertiesBookings.value = bookingsResponse.data
+  } catch (err) {
+    console.error('Error cancelling booking:', err)
+    notificationStore.showNotification('Failed to cancel booking.', 'error')
   }
 }
 
@@ -224,9 +269,21 @@ onBeforeUnmount(() => {
                   </span>
                   <span v-else>N/A</span>
                 </td>
-                <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6">
-                  <!-- TODO: Add actions like confirm/cancel booking -->
-                  <a href="#" class="text-indigo-600 hover:text-indigo-900">View<span class="sr-only">, {{ booking.property_details.title }}</span></a>
+                <td class="relative whitespace-nowrap py-4 pl-3 pr-4 text-right text-sm font-medium sm:pr-6 space-x-2">
+                  <button 
+                    v-if="booking.status === 'pending'"
+                    @click="confirmBooking(booking.id)" 
+                    class="text-green-600 hover:text-green-900"
+                  >
+                    Confirm
+                  </button>
+                  <button 
+                    v-if="booking.status !== 'cancelled'"
+                    @click="cancelBooking(booking.id)" 
+                    class="text-red-600 hover:text-red-900"
+                  >
+                    Cancel
+                  </button>
                 </td>
               </tr>
             </tbody>

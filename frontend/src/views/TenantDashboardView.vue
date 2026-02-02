@@ -1,9 +1,11 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
+import { useNotificationStore } from '../stores/notifications' // Added
 import axios from 'axios'
 
 const authStore = useAuthStore()
+const notificationStore = useNotificationStore() // Added
 const bookings = ref([])
 const loading = ref(true)
 const error = ref(null)
@@ -28,12 +30,31 @@ onMounted(async () => {
   } catch (err) {
     console.error('Error fetching bookings:', err)
     error.value = 'Failed to load bookings. Please try again.'
-  } finally {
-    loading.value = false
-  }
-})
-</script>
-
+      } finally {
+      loading.value = false
+    }
+  })
+  
+  const payInvoice = async (invoiceId) => {
+    try {
+      await axios.post(`http://localhost:8000/api/billing/invoices/${invoiceId}/pay/`, {}, {
+        headers: {
+          Authorization: `Bearer ${authStore.accessToken}`
+        }
+      })
+      notificationStore.showNotification('Invoice paid successfully!', 'success')
+      // Refresh bookings to show updated invoice status
+      const response = await axios.get('http://localhost:8000/api/bookings/', {
+        headers: {
+          Authorization: `Bearer ${authStore.accessToken}`
+        }
+      })
+      bookings.value = response.data
+    } catch (err) {
+      console.error('Error paying invoice:', err)
+      notificationStore.showNotification('Failed to pay invoice.', 'error')
+    }
+  }  </script>
 <template>
   <div>
     <div class="mb-8">
@@ -103,7 +124,14 @@ onMounted(async () => {
                   >
                     {{ booking.invoice.status.charAt(0).toUpperCase() + booking.invoice.status.slice(1) }}
                   </span>
-                  (Due: {{ booking.invoice.due_date }})
+                  <button 
+                    v-if="booking.invoice.status === 'pending'"
+                    @click="payInvoice(booking.invoice.id)"
+                    class="ml-2 text-indigo-600 hover:text-indigo-900 font-semibold"
+                  >
+                    Pay Now
+                  </button>
+                  <div class="text-xs text-gray-400 mt-1">(Due: {{ booking.invoice.due_date }})</div>
                 </dd>
               </div>
             </dl>

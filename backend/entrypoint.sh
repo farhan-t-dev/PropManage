@@ -17,11 +17,16 @@ echo "Making migrations..."
 python manage.py makemigrations users
 python manage.py makemigrations properties
 python manage.py makemigrations bookings
+python manage.py makemigrations billing
 python manage.py makemigrations
 
 # Apply database migrations
 echo "Applying database migrations..."
 python manage.py migrate
+
+# Collect static files
+echo "Collecting static files..."
+python manage.py collectstatic --noinput
 
 # Execute the command passed to the docker container
 exec "$@"
