@@ -1,90 +1,77 @@
-# PropManage - Senior Architecture & Implementation Plan
+# PropManage - Elite Property Management & Booking System
 
-**Project:** PropManage (Automated Property Management & Booking System)
-**Role:** Senior Full-Stack Engineer
-**Architecture:** Monorepo (Django API + Vue.js SPA)
-**Infrastructure:** Dockerized Microservices
+**Goal:** Build a production-ready, visually stunning, and architecturally superior property management platform that showcases senior-level proficiency in Django and Vue.js.
 
 ---
 
-## 1. High-Level Architecture
+## 1. High-Level Architecture (The "Senior" Stack)
 
-We will follow a **Headless Architecture** pattern.
-- **Backend (The "Brain"):** Django REST Framework (DRF) serving JSON. No server-side HTML rendering.
-- **Frontend (The "Face"):** Vue 3 (Composition API) + Pinia (State) + Tailwind CSS.
-- **Async Workers (The "Muscle"):** Celery + Redis for handling heavy tasks (emailing, report generation) off the main thread.
-- **Database:** PostgreSQL (Relational data integrity is critical for bookings/finance).
-
-### System Diagram
-```mermaid
-[Vue 3 Client] --(JSON/JWT)--> [Nginx Proxy] --(HTTP)--> [Django API]
-                                                           |
-                                        +------------------+------------------+
-                                        |                  |                  |
-                                  [PostgreSQL]          [Redis] <---- [Celery Worker]
-```
+- **Backend:** Django 5.x (REST Framework)
+    - **Versioning:** API v1 structure.
+    - **Security:** JWT with HTTP-only cookies (CSRF protected).
+    - **Performance:** Redis caching for frequent property lookups.
+    - **Documentation:** Auto-generated OpenAPI 3.0 schema (drf-spectacular).
+- **Frontend:** Vue 3 (Composition API) + Vite
+    - **UI:** Tailwind CSS + Shadcn-Vue (Premium component library).
+    - **Data Fetching:** TanStack Query (Vue Query) for caching and optimistic updates.
+    - **State:** Pinia (Persistent user sessions).
+- **Async & Real-time:**
+    - **Workers:** Celery + Redis.
+    - **Real-time:** Django Channels (WebSockets) for instant booking notifications.
+- **Infrastructure:**
+    - **Orchestration:** Docker Compose (Nginx, Gunicorn, Postgres, Redis, Celery, Mailpit).
 
 ---
 
-## 2. Database Schema Strategy (Core Entities)
+## 2. Advanced Database & Logic
 
-1.  **Users (Custom User Model):**
-    - `role`: Enum ['admin', 'landlord', 'tenant']
-    - Standard auth fields (email, password hash).
+### Core Entities (Refined)
+1.  **Users:** Custom model with Profile images, Bio, and Role-based permissions (Landlord, Tenant, Admin).
 2.  **Properties:**
-    - `owner`: FK to User (Landlord).
-    - `address`, `features` (JSONField), `base_price`.
+    - `images`: Many-to-one relationship for galleries.
+    - `amenities`: JSONB/Array field for flexible filtering.
+    - `location`: Geocoding support (lat/long).
 3.  **Bookings:**
-    - `property`: FK to Property.
-    - `tenant`: FK to User.
-    - `start_date`, `end_date`, `status` (['pending', 'confirmed', 'cancelled']).
-    - **Constraint:** Non-overlapping dates per property.
-4.  **Invoices:**
-    - `booking`: FK to Booking.
-    - `amount`, `status`, `due_date`.
+    - **Status Machine:** [Draft -> Pending -> Confirmed -> Completed -> Cancelled].
+    - **Collision Logic:** Database-level constraints to prevent double-booking.
+4.  **Financials (Invoices):**
+    - **PDF Generation:** Automated backend PDF generation for receipts.
+    - **Balance Tracking:** User-level ledger for landlords.
 
 ---
 
-## 3. Development Phases (Sprint Plan)
+## 3. The Overhaul Sprint Plan
 
-### Phase 1: The Foundation (Backend Focus)
-**Goal:** A working API that can handle auth and basic CRUD.
-- [x] Dockerize the stack (Django, Postgres, Redis).
-- [x] Configure `settings.py` for environment variables.
-- [x] Implement Custom User Model & JWT Authentication (SimpleJWT).
-- [x] Create `Property` and `Booking` models.
-- [x] **Milestone:** Admin panel works, Postman collection for Auth/Properties returns 200 OK.
+### Phase 1: Architectural Foundation (Backend Focus)
+- [ ] **Infrastructure:** Modernize `docker-compose.yml` with Nginx, Mailpit, and healthy-check deps.
+- [ ] **API Standard:** Implement standard response wrappers (Success/Error/Pagination).
+- [ ] **Security:** Switch JWT storage to HTTP-only cookies for enhanced security.
+- [ ] **Versioning:** Move all endpoints to `/api/v1/`.
 
-### Phase 2: The Core Logic (Complex Backend)
-**Goal:** Handle the "business" of property management.
-- [x] **Booking Algorithm:** Write the service layer to check availability (`is_available(property, start, end)`).
-- [x] **Celery Setup:** Configure Celery worker.
-- [x] **Background Task:** `send_confirmation_email` task triggered on booking creation.
-- [x] **Unit Tests:** Test the availability logic edge cases (overlapping dates).
-- [x] **Automated Invoicing:** Generate invoices via Celery/Signals when bookings are confirmed.
+### Phase 2: Feature Richness (Backend & Logic)
+- [ ] **Media Management:** Implement `easy-thumbnails` or similar for optimized property images.
+- [ ] **Advanced Scheduling:** Add turnover time logic (e.g., 1 day gap between bookings).
+- [ ] **PDF Engine:** Create a Celery task to generate professional PDF invoices via `WeasyPrint`.
+- [ ] **Analytics Engine:** Service layer for complex revenue forecasting and occupancy stats.
 
-### Phase 3: The Frontend Shell (Vue.js Setup)
-**Goal:** A clean UI that talks to the API.
-- [x] Setup Vue Router & Pinia stores (`authStore`, `propertyStore`).
-- [x] Create "Layouts": `AuthLayout` (Login/Register) vs `DashboardLayout` (Sidebar + Content).
-- [x] Build Login form & JWT storage logic (Axios interceptors).
+### Phase 3: Premium UI/UX (Frontend Overhaul)
+- [ ] **Theme System:** Implement a modern, responsive design using a "Fluid UI" approach.
+- [ ] **Dashboard 2.0:**
+    - **Landlord:** Interactive charts (Revenue, Bookings) + Quick Action widgets.
+    - **Tenant:** Booking timeline + Payment history.
+- [ ] **Property Discovery:** Advanced filtering sidebar + Map integration (Leaflet/MapLibre).
+- [ ] **Booking Flow:** Multi-step reservation wizard with real-time price calculation.
 
-### Phase 4: Feature Integration
-**Goal:** Connect Front and Back.
-- [x] **Dashboard:** Landlord view (My Properties) vs Tenant view (My Bookings).
-- [x] **Booking Flow:** Calendar UI to select dates -> POST /api/bookings/.
-- [x] **Real-time Feedback:** Toast notifications on success/error.
-- [x] **Booking Management:** Landlords can confirm/cancel bookings from their dashboard.
+### Phase 4: Senior Polish
+- [ ] **Real-time Notifications:** WebSockets for "New Booking" alerts.
+- [ ] **Global Error Handling:** Integrated Toast system for every API failure.
+- [ ] **Performance:** Implement `select_related` and `prefetch_related` across all ViewSets.
+- [ ] **Testing:** 90%+ coverage on business logic (availability, invoicing).
 
-### Phase 5: The "Showcase" Features (Advanced)
-**Goal:** Prove seniority.
-- [x] **Data Viz:** Add a chart to Landlord Dashboard showing "Monthly Revenue" (Chart.js).
-- [x] **Report Export:** Button to "Download CSV" (Backend generates it via Streaming Response).
-- [x] **Optimized Deployment:** Docker Compose for production (Nginx serving static files).
-- [x] **Seed Data:** Comprehensive seed command with historical data for immediate visualization.
 ---
 
 ## 4. Immediate Next Steps
 
-1.  **Docker Setup:** Create `Dockerfile` and `docker-compose.yml` to run the DB and API without manual terminal hacking.
-2.  **Django Config:** Clean up `settings.py` and set up the PostgreSQL connection.
+1.  **Docker & Environment:** Update `docker-compose.yml` for production-like local dev.
+2.  **API Versioning & Standard:** Restructure URLs and responses.
+3.  **Frontend Layout:** Implement the "Shell" of the new premium UI.

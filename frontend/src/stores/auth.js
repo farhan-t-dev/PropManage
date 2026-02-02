@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import api from '../api'
 import axios from 'axios'
 
 export const useAuthStore = defineStore('auth', {
@@ -15,7 +16,7 @@ export const useAuthStore = defineStore('auth', {
   actions: {
     async login(username, password) {
       try {
-        const response = await axios.post('http://localhost:8000/api/token/', {
+        const response = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/auth/token/`, {
           username,
           password,
         })
@@ -26,9 +27,7 @@ export const useAuthStore = defineStore('auth', {
         localStorage.setItem('accessToken', this.accessToken)
         localStorage.setItem('refreshToken', this.refreshToken)
 
-        // Fetch user details including role
         await this.fetchUser()
-        
         return true
       } catch (error) {
         console.error('Login failed', error)
@@ -37,21 +36,28 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async fetchUser() {
-      if (!this.accessToken) {
-        this.user = null;
-        return;
-      }
+      if (!this.accessToken) return
       try {
-        const response = await axios.get('http://localhost:8000/api/users/me/', {
-          headers: {
-            Authorization: `Bearer ${this.accessToken}`
-          }
-        })
+        const response = await api.get('/users/me/')
         this.user = response.data
         localStorage.setItem('user', JSON.stringify(this.user))
       } catch (error) {
         console.error('Failed to fetch user details', error)
-        this.logout() // Logout if fetching user fails (e.g., token expired or invalid)
+        this.logout()
+      }
+    },
+
+    async refreshAccessToken() {
+      if (!this.refreshToken) throw new Error('No refresh token')
+      try {
+        const response = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/auth/token/refresh/`, {
+          refresh: this.refreshToken
+        })
+        this.accessToken = response.data.access
+        localStorage.setItem('accessToken', this.accessToken)
+      } catch (error) {
+        this.logout()
+        throw error
       }
     },
 
@@ -62,13 +68,11 @@ export const useAuthStore = defineStore('auth', {
       localStorage.removeItem('accessToken')
       localStorage.removeItem('refreshToken')
       localStorage.removeItem('user')
-    }, // Added comma here
+    },
+
     async checkAuth() {
-      // Always attempt to fetch user if access token exists, to ensure role is up-to-date
-      if (this.accessToken) {
+      if (this.accessToken && !this.user) {
         await this.fetchUser()
-      } else {
-        this.user = null; // Ensure user is null if no access token
       }
     },
   },

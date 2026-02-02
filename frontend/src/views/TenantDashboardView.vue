@@ -1,140 +1,108 @@
 <script setup>
 import { ref, onMounted } from 'vue'
 import { useAuthStore } from '../stores/auth'
-import { useNotificationStore } from '../stores/notifications' // Added
-import axios from 'axios'
+import { useNotificationStore } from '../stores/notifications'
+import api from '../api'
 
 const authStore = useAuthStore()
-const notificationStore = useNotificationStore() // Added
+const notificationStore = useNotificationStore()
 const bookings = ref([])
 const loading = ref(true)
 const error = ref(null)
 
-onMounted(async () => {
-  if (!authStore.isAuthenticated) {
-    // Redirect to login if not authenticated
-    // This is also handled by router.beforeEach (if implemented)
-    // but good to have a fallback
-    error.value = 'Please log in to view your bookings.'
-    loading.value = false
-    return
-  }
-
+const fetchBookings = async () => {
   try {
-    const response = await axios.get('http://localhost:8000/api/bookings/', {
-      headers: {
-        Authorization: `Bearer ${authStore.accessToken}`
-      }
-    })
-    bookings.value = response.data
+    const response = await api.get('/bookings/')
+    bookings.value = response.data.results || response.data
   } catch (err) {
-    console.error('Error fetching bookings:', err)
-    error.value = 'Failed to load bookings. Please try again.'
-      } finally {
-      loading.value = false
-    }
-  })
-  
-  const payInvoice = async (invoiceId) => {
-    try {
-      await axios.post(`http://localhost:8000/api/billing/invoices/${invoiceId}/pay/`, {}, {
-        headers: {
-          Authorization: `Bearer ${authStore.accessToken}`
-        }
-      })
-      notificationStore.showNotification('Invoice paid successfully!', 'success')
-      // Refresh bookings to show updated invoice status
-      const response = await axios.get('http://localhost:8000/api/bookings/', {
-        headers: {
-          Authorization: `Bearer ${authStore.accessToken}`
-        }
-      })
-      bookings.value = response.data
-    } catch (err) {
-      console.error('Error paying invoice:', err)
-      notificationStore.showNotification('Failed to pay invoice.', 'error')
-    }
-  }  </script>
+    error.value = 'Failed to load your bookings.'
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(fetchBookings)
+
+const payInvoice = async (invoiceId) => {
+  try {
+    await api.post(`/billing/invoices/${invoiceId}/pay/`)
+    notificationStore.showNotification('Payment successful!', 'success')
+    fetchBookings()
+  } catch (err) {
+    notificationStore.showNotification('Payment failed.', 'error')
+  }
+}
+</script>
+
 <template>
-  <div>
-    <div class="mb-8">
-      <h1 class="text-3xl font-extrabold text-gray-900">Tenant Dashboard</h1>
-      <p class="mt-2 text-sm text-gray-700">Your personalized overview of bookings and activities.</p>
+  <div class="space-y-10">
+    <div class="max-w-2xl">
+      <h1 class="text-4xl font-extrabold text-slate-900 tracking-tight mb-2">My Bookings</h1>
+      <p class="text-slate-500 font-medium">Manage your reservations, view invoices, and track your stays.</p>
     </div>
 
-    <div v-if="loading" class="flex justify-center items-center h-64">
-      <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
+    <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 gap-6 animate-pulse">
+      <div v-for="i in 2" :key="i" class="h-64 bg-slate-100 rounded-[2.5rem]"></div>
     </div>
 
-    <div v-else-if="error" class="bg-red-50 p-4 rounded-md">
-      <p class="text-red-700">{{ error }}</p>
+    <div v-else-if="bookings.length === 0" class="text-center py-20 bg-white rounded-[2.5rem] border border-slate-100">
+       <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6">
+          <svg class="w-10 h-10 text-slate-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+       </div>
+       <h3 class="text-xl font-bold text-slate-900 mb-2">No bookings yet</h3>
+       <p class="text-slate-500 mb-8">Ready to find your next adventure?</p>
+       <router-link to="/properties" class="inline-flex items-center px-8 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">
+         Browse Properties
+       </router-link>
     </div>
 
-    <div v-else-if="bookings.length === 0" class="text-center py-12">
-      <p class="text-gray-500 text-lg">You have no bookings yet.</p>
-      <router-link to="/properties" class="mt-6 inline-flex items-center px-6 py-3 border border-transparent text-base font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700">
-        Browse Properties
-      </router-link>
-    </div>
+    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div v-for="booking in bookings" :key="booking.id" class="group bg-white rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 overflow-hidden">
+        <div class="p-8">
+          <div class="flex justify-between items-start mb-6">
+            <div>
+              <h3 class="text-xl font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{{ booking.property_details.title }}</h3>
+              <p class="text-sm text-slate-400 font-medium mt-1">{{ booking.property_details.address }}</p>
+            </div>
+            <span :class="[
+              booking.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' : 
+              booking.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600',
+              'px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest'
+            ]">{{ booking.status }}</span>
+          </div>
 
-    <div v-else class="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-      <div v-for="booking in bookings" :key="booking.id" class="bg-white shadow overflow-hidden sm:rounded-lg">
-        <div class="px-4 py-5 sm:p-6">
-          <h3 class="text-lg leading-6 font-medium text-gray-900">
-            {{ booking.property_details.title }}
-          </h3>
-          <p class="mt-1 max-w-2xl text-sm text-gray-500">
-            {{ booking.property_details.address }}
-          </p>
-          <div class="mt-4 border-t border-gray-200 pt-4">
-            <dl class="grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
-              <div class="sm:col-span-1">
-                <dt class="text-sm font-medium text-gray-500">Check-in</dt>
-                <dd class="mt-1 text-sm text-gray-900">{{ booking.start_date }}</dd>
-              </div>
-              <div class="sm:col-span-1">
-                <dt class="text-sm font-medium text-gray-500">Check-out</dt>
-                <dd class="mt-1 text-sm text-gray-900">{{ booking.end_date }}</dd>
-              </div>
-              <div class="sm:col-span-1">
-                <dt class="text-sm font-medium text-gray-500">Status</dt>
-                <dd class="mt-1 text-sm text-gray-900">
-                  <span 
-                    :class="{
-                      'px-2 inline-flex text-xs leading-5 font-semibold rounded-full': true,
-                      'bg-yellow-100 text-yellow-800': booking.status === 'pending',
-                      'bg-green-100 text-green-800': booking.status === 'confirmed',
-                      'bg-red-100 text-red-800': booking.status === 'cancelled',
-                    }"
-                  >
-                    {{ booking.status.charAt(0).toUpperCase() + booking.status.slice(1) }}
-                  </span>
-                </dd>
-              </div>
-              <div class="sm:col-span-1" v-if="booking.invoice">
-                <dt class="text-sm font-medium text-gray-500">Invoice Status</dt>
-                <dd class="mt-1 text-sm text-gray-900">
-                   <span 
-                    :class="{
-                      'px-2 inline-flex text-xs leading-5 font-semibold rounded-full': true,
-                      'bg-yellow-100 text-yellow-800': booking.invoice.status === 'pending',
-                      'bg-green-100 text-green-800': booking.invoice.status === 'paid',
-                      'bg-red-100 text-red-800': booking.invoice.status === 'overdue' || booking.invoice.status === 'cancelled',
-                    }"
-                  >
-                    {{ booking.invoice.status.charAt(0).toUpperCase() + booking.invoice.status.slice(1) }}
-                  </span>
-                  <button 
-                    v-if="booking.invoice.status === 'pending'"
-                    @click="payInvoice(booking.invoice.id)"
-                    class="ml-2 text-indigo-600 hover:text-indigo-900 font-semibold"
-                  >
-                    Pay Now
-                  </button>
-                  <div class="text-xs text-gray-400 mt-1">(Due: {{ booking.invoice.due_date }})</div>
-                </dd>
-              </div>
-            </dl>
+          <div class="grid grid-cols-2 gap-6 p-6 bg-slate-50 rounded-3xl mb-8">
+            <div>
+              <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Check-in</div>
+              <div class="text-sm font-bold text-slate-900">{{ booking.start_date }}</div>
+            </div>
+            <div>
+              <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Check-out</div>
+              <div class="text-sm font-bold text-slate-900">{{ booking.end_date }}</div>
+            </div>
+          </div>
+
+          <div v-if="booking.invoice" class="flex items-center justify-between pt-6 border-t border-slate-50">
+            <div>
+              <div class="text-xs font-bold text-slate-400 mb-1">Invoice Amount</div>
+              <div class="text-lg font-black text-slate-900">${{ booking.invoice.amount }}</div>
+            </div>
+            
+            <div class="flex items-center gap-4">
+              <span v-if="booking.invoice.status === 'paid'" class="flex items-center text-emerald-600 font-bold text-sm">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+                Paid
+              </span>
+              <button 
+                v-else-if="booking.invoice.status === 'pending'"
+                @click="payInvoice(booking.invoice.id)"
+                class="px-6 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-indigo-600 transition-all"
+              >
+                Pay Now
+              </button>
+            </div>
           </div>
         </div>
       </div>
