@@ -1,0 +1,18 @@
+# Language Statistics Overrides
+# Mark compiled/built files as vendored to exclude them from stats
+backend/staticfiles/** linguist-vendored
+frontend/dist/** linguist-vendored
+backend/static/admin/** linguist-vendored
+backend/media/** linguist-vendored
+
+# Mark specific files as generated
+db.sqlite3 linguist-generated
+*.min.js linguist-vendored
+*.min.css linguist-vendored
+
+# Ensure consistent line endings
+* text=auto eol=lf
+*.py text
+*.vue text
+*.js text
+*.css text
