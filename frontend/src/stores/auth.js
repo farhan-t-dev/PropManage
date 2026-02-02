@@ -1,32 +1,24 @@
 import { defineStore } from 'pinia'
 import api from '../api'
-import axios from 'axios'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: JSON.parse(localStorage.getItem('user')) || null,
-    accessToken: localStorage.getItem('accessToken') || null,
-    refreshToken: localStorage.getItem('refreshToken') || null,
   }),
   getters: {
-    isAuthenticated: (state) => !!state.accessToken,
+    isAuthenticated: (state) => !!state.user,
     isLandlord: (state) => state.user?.role === 'landlord',
     isAdmin: (state) => state.user?.role === 'admin',
   },
   actions: {
     async login(username, password) {
       try {
-        const response = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/auth/token/`, {
+        // We use the api instance which has withCredentials: true
+        await api.post('/auth/token/', {
           username,
           password,
         })
         
-        this.accessToken = response.data.access
-        this.refreshToken = response.data.refresh
-
-        localStorage.setItem('accessToken', this.accessToken)
-        localStorage.setItem('refreshToken', this.refreshToken)
-
         await this.fetchUser()
         return true
       } catch (error) {
@@ -36,42 +28,40 @@ export const useAuthStore = defineStore('auth', {
     },
 
     async fetchUser() {
-      if (!this.accessToken) return
       try {
         const response = await api.get('/users/me/')
         this.user = response.data
         localStorage.setItem('user', JSON.stringify(this.user))
       } catch (error) {
         console.error('Failed to fetch user details', error)
-        this.logout()
+        this.logout_local()
       }
     },
 
     async refreshAccessToken() {
-      if (!this.refreshToken) throw new Error('No refresh token')
       try {
-        const response = await axios.post(`${import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1'}/auth/token/refresh/`, {
-          refresh: this.refreshToken
-        })
-        this.accessToken = response.data.access
-        localStorage.setItem('accessToken', this.accessToken)
+        await api.post('/auth/token/refresh/')
       } catch (error) {
-        this.logout()
+        this.logout_local()
         throw error
       }
     },
 
-    logout() {
+    async logout() {
+      try {
+        await api.post('/auth/logout/')
+      } finally {
+        this.logout_local()
+      }
+    },
+
+    logout_local() {
       this.user = null
-      this.accessToken = null
-      this.refreshToken = null
-      localStorage.removeItem('accessToken')
-      localStorage.removeItem('refreshToken')
       localStorage.removeItem('user')
     },
 
     async checkAuth() {
-      if (this.accessToken && !this.user) {
+      if (!this.user) {
         await this.fetchUser()
       }
     },

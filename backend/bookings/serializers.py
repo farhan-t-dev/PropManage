@@ -1,18 +1,22 @@
 from rest_framework import serializers
 from .models import Booking
-from properties.serializers import PropertySerializer
+from properties.serializers import UnitSerializer
 from users.serializers import UserSerializer
 from billing.serializers import InvoiceSerializer
 
 class BookingSerializer(serializers.ModelSerializer):
-    property_details = PropertySerializer(source='property', read_only=True)
+    unit_details = UnitSerializer(source='unit', read_only=True)
     tenant_details = UserSerializer(source='tenant', read_only=True)
     invoice = InvoiceSerializer(read_only=True)
 
     class Meta:
         model = Booking
-        fields = '__all__'
-        read_only_fields = ('tenant', 'status', 'created_at', 'updated_at')
+        fields = (
+            'id', 'unit', 'unit_details', 'tenant', 'tenant_details', 
+            'start_date', 'end_date', 'status', 'total_price', 
+            'invoice', 'created_at', 'updated_at'
+        )
+        read_only_fields = ('tenant', 'status', 'total_price', 'created_at', 'updated_at')
 
     def validate(self, data):
         # Call model's clean method for validation

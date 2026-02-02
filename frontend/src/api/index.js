@@ -6,39 +6,27 @@ const api = axios.create({
   headers: {
     'Content-Type': 'application/json',
   },
+  withCredentials: true,
 });
 
-// Request interceptor for API calls
-api.interceptors.request.use(
-  (config) => {
-    const authStore = useAuthStore();
-    const token = authStore.accessToken;
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => {
-    return Promise.reject(error);
-  }
-);
-
-// Response interceptor for API calls
 api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const originalRequest = error.config;
     const authStore = useAuthStore();
 
-    if (error.response.status === 401 && !originalRequest._retry) {
+    // Avoid infinite loops on auth endpoints
+    if (originalRequest.url.includes('/auth/')) {
+      return Promise.reject(error);
+    }
+
+    if (error.response?.status === 401 && !originalRequest._retry) {
       originalRequest._retry = true;
       try {
         await authStore.refreshAccessToken();
-        const token = authStore.accessToken;
-        originalRequest.headers.Authorization = `Bearer ${token}`;
         return api(originalRequest);
       } catch (refreshError) {
-        authStore.logout();
+        authStore.logout_local();
         return Promise.reject(refreshError);
       }
     }

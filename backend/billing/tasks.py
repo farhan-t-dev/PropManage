@@ -1,42 +1,41 @@
 from celery import shared_task
 from datetime import timedelta
 from django.utils import timezone
+from .services import generate_invoice_pdf
 
 @shared_task
 def generate_invoice_for_booking(booking_id):
     """
-    Generates an invoice for a given booking.
+    Generates an invoice record and then triggers the PDF generation.
     """
     from bookings.models import Booking
     from billing.models import Invoice
 
     try:
-        booking = Booking.objects.get(id=booking_id)
+        booking = Booking.objects.select_related('unit').get(id=booking_id)
 
-        # Check if an invoice already exists for this booking to prevent duplicates
         if hasattr(booking, 'invoice'):
-            print(f"Invoice for booking {booking_id} already exists.")
             return False
 
-        # Calculate amount based on property base price and booking duration
-        # Example: daily rate * number of nights
         duration = (booking.end_date - booking.start_date).days
-        amount = booking.property.base_price * duration
-
-        # Due date could be, for example, 7 days from invoice issue date
+        amount = booking.unit.base_price * duration
         due_date = timezone.now().date() + timedelta(days=7)
 
         invoice = Invoice.objects.create(
             booking=booking,
             amount=amount,
             due_date=due_date,
-            status='pending' # Initial status
+            status='pending'
         )
-        print(f"Invoice {invoice.id} created for booking {booking_id} with amount {amount}.")
+        
+        # Trigger PDF generation
+        generate_invoice_pdf_task.delay(invoice.id)
+        
         return True
-    except Booking.DoesNotExist:
-        print(f"Booking {booking_id} does not exist. Cannot generate invoice.")
-        return False
     except Exception as e:
-        print(f"Error generating invoice for booking {booking_id}: {e}")
+        print(f"Task Error: {e}")
         return False
+
+@shared_task
+def generate_invoice_pdf_task(invoice_id):
+    return generate_invoice_pdf(invoice_id)

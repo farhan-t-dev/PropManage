@@ -3,6 +3,6 @@ from .models import Booking
 
 @admin.register(Booking)
 class BookingAdmin(admin.ModelAdmin):
-    list_display = ('property', 'tenant', 'start_date', 'end_date', 'status')
-    list_filter = ('status', 'start_date')
-    search_fields = ('property__title', 'tenant__username')
+    list_display = ('unit', 'tenant', 'start_date', 'end_date', 'status', 'total_price')
+    list_filter = ('status', 'start_date', 'unit__property')
+    search_fields = ('unit__title', 'unit__unit_number', 'tenant__username')

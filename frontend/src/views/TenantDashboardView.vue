@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, computed } from 'vue'
 import { useAuthStore } from '../stores/auth'
 import { useNotificationStore } from '../stores/notifications'
 import api from '../api'
@@ -7,27 +7,38 @@ import api from '../api'
 const authStore = useAuthStore()
 const notificationStore = useNotificationStore()
 const bookings = ref([])
+const maintenanceRequests = ref([])
 const loading = ref(true)
-const error = ref(null)
 
-const fetchBookings = async () => {
+const stats = computed(() => {
+  const active = bookings.value.filter(b => b.status === 'confirmed').length
+  const totalSpent = bookings.value.filter(b => b.invoice?.status === 'paid')
+    .reduce((acc, curr) => acc + parseFloat(curr.total_price), 0)
+  return { active, totalSpent }
+})
+
+const fetchData = async () => {
   try {
-    const response = await api.get('/bookings/')
-    bookings.value = response.data.results || response.data
+    const [bRes, mRes] = await Promise.all([
+      api.get('/bookings/'),
+      api.get('/maintenance/requests/')
+    ])
+    bookings.value = bRes.data.results || bRes.data
+    maintenanceRequests.value = mRes.data.results || mRes.data
   } catch (err) {
-    error.value = 'Failed to load your bookings.'
+    notificationStore.showNotification('Failed to load data.', 'error')
   } finally {
     loading.value = false
   }
 }
 
-onMounted(fetchBookings)
+onMounted(fetchData)
 
 const payInvoice = async (invoiceId) => {
   try {
     await api.post(`/billing/invoices/${invoiceId}/pay/`)
     notificationStore.showNotification('Payment successful!', 'success')
-    fetchBookings()
+    fetchData()
   } catch (err) {
     notificationStore.showNotification('Payment failed.', 'error')
   }
@@ -36,76 +47,99 @@ const payInvoice = async (invoiceId) => {
 
 <template>
   <div class="space-y-10">
-    <div class="max-w-2xl">
-      <h1 class="text-4xl font-extrabold text-slate-900 tracking-tight mb-2">My Bookings</h1>
-      <p class="text-slate-500 font-medium">Manage your reservations, view invoices, and track your stays.</p>
-    </div>
-
-    <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 gap-6 animate-pulse">
-      <div v-for="i in 2" :key="i" class="h-64 bg-slate-100 rounded-[2.5rem]"></div>
-    </div>
-
-    <div v-else-if="bookings.length === 0" class="text-center py-20 bg-white rounded-[2.5rem] border border-slate-100">
-       <div class="w-20 h-20 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-6">
-          <svg class="w-10 h-10 text-slate-300" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-          </svg>
-       </div>
-       <h3 class="text-xl font-bold text-slate-900 mb-2">No bookings yet</h3>
-       <p class="text-slate-500 mb-8">Ready to find your next adventure?</p>
-       <router-link to="/properties" class="inline-flex items-center px-8 py-3 bg-indigo-600 text-white font-bold rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-100">
-         Browse Properties
-       </router-link>
-    </div>
-
-    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-8">
-      <div v-for="booking in bookings" :key="booking.id" class="group bg-white rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-xl hover:shadow-slate-200/50 transition-all duration-300 overflow-hidden">
-        <div class="p-8">
-          <div class="flex justify-between items-start mb-6">
-            <div>
-              <h3 class="text-xl font-bold text-slate-900 group-hover:text-indigo-600 transition-colors">{{ booking.property_details.title }}</h3>
-              <p class="text-sm text-slate-400 font-medium mt-1">{{ booking.property_details.address }}</p>
-            </div>
-            <span :class="[
-              booking.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' : 
-              booking.status === 'pending' ? 'bg-amber-100 text-amber-700' : 'bg-slate-100 text-slate-600',
-              'px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest'
-            ]">{{ booking.status }}</span>
-          </div>
-
-          <div class="grid grid-cols-2 gap-6 p-6 bg-slate-50 rounded-3xl mb-8">
-            <div>
-              <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Check-in</div>
-              <div class="text-sm font-bold text-slate-900">{{ booking.start_date }}</div>
-            </div>
-            <div>
-              <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Check-out</div>
-              <div class="text-sm font-bold text-slate-900">{{ booking.end_date }}</div>
-            </div>
-          </div>
-
-          <div v-if="booking.invoice" class="flex items-center justify-between pt-6 border-t border-slate-50">
-            <div>
-              <div class="text-xs font-bold text-slate-400 mb-1">Invoice Amount</div>
-              <div class="text-lg font-black text-slate-900">${{ booking.invoice.amount }}</div>
-            </div>
-            
-            <div class="flex items-center gap-4">
-              <span v-if="booking.invoice.status === 'paid'" class="flex items-center text-emerald-600 font-bold text-sm">
-                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
-                Paid
-              </span>
-              <button 
-                v-else-if="booking.invoice.status === 'pending'"
-                @click="payInvoice(booking.invoice.id)"
-                class="px-6 py-2.5 bg-slate-900 text-white text-sm font-bold rounded-xl hover:bg-indigo-600 transition-all"
-              >
-                Pay Now
-              </button>
-            </div>
-          </div>
-        </div>
+    <div class="flex justify-between items-center">
+      <div>
+        <h1 class="text-4xl font-extrabold text-slate-900 tracking-tight">Resident Portal</h1>
+        <p class="text-slate-500 font-medium">Welcome back, {{ authStore.user?.first_name }}.</p>
       </div>
+      <router-link to="/discover" class="px-6 py-3 bg-indigo-600 text-white font-bold rounded-2xl shadow-lg shadow-indigo-100 hover:bg-indigo-700 transition-all">Book New Stay</router-link>
+    </div>
+
+    <!-- Tenant Stats -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+       <div class="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-6">
+          <div class="w-16 h-16 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600">
+             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
+          </div>
+          <div>
+             <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Active Stays</div>
+             <div class="text-3xl font-black text-slate-900">{{ stats.active }}</div>
+          </div>
+       </div>
+       <div class="bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm flex items-center gap-6">
+          <div class="w-16 h-16 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600">
+             <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1c-1.11 0-2.08-.402-2.599-1M12 8V7m0 11v1m0-1c1.11 0 2.08-.402 2.599-1M12 18V19m0-1c-1.11 0-2.08-.402-2.599-1M12 18V19" /></svg>
+          </div>
+          <div>
+             <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Investment</div>
+             <div class="text-3xl font-black text-slate-900">${{ stats.totalSpent.toLocaleString() }}</div>
+          </div>
+       </div>
+    </div>
+
+    <div class="grid lg:grid-cols-3 gap-8">
+       <!-- Active Reservations -->
+       <div class="lg:col-span-2 space-y-6">
+          <h2 class="text-xl font-bold text-slate-900 px-2">Active Reservations</h2>
+          <div v-if="bookings.length === 0" class="bg-white p-10 rounded-[2.5rem] border border-slate-100 text-center text-slate-400">
+             No bookings found. Start by exploring units.
+          </div>
+          <div v-else class="space-y-4">
+             <div v-for="b in bookings" :key="b.id" class="group bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm hover:shadow-md transition-all">
+                <div class="flex justify-between items-start mb-6">
+                   <div>
+                      <div class="text-[10px] font-black text-indigo-500 uppercase tracking-widest mb-1">{{ b.unit_details.property_title }}</div>
+                      <h3 class="text-xl font-bold text-slate-900">{{ b.unit_details.title }}</h3>
+                   </div>
+                   <span :class="[
+                     b.status === 'confirmed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700',
+                     'px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest'
+                   ]">{{ b.status }}</span>
+                </div>
+                
+                <div class="grid grid-cols-2 gap-4 mb-8">
+                   <div class="p-4 bg-slate-50 rounded-2xl">
+                      <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Check-in</div>
+                      <div class="text-sm font-bold text-slate-900">{{ b.start_date }}</div>
+                   </div>
+                   <div class="p-4 bg-slate-50 rounded-2xl">
+                      <div class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Check-out</div>
+                      <div class="text-sm font-bold text-slate-900">{{ b.end_date }}</div>
+                   </div>
+                </div>
+
+                <div v-if="b.invoice" class="flex items-center justify-between pt-6 border-t border-slate-50">
+                   <div>
+                      <div class="text-xs font-bold text-slate-400 mb-1">Total Stay Value</div>
+                      <div class="text-xl font-black text-slate-900">${{ b.total_price }}</div>
+                   </div>
+                   <div v-if="b.invoice.status === 'paid'" class="text-emerald-600 font-bold text-sm flex items-center gap-2">
+                      <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M5 13l4 4L19 7" /></svg>
+                      Payment Verified
+                   </div>
+                   <button v-else-if="b.invoice.status === 'pending'" @click="payInvoice(b.invoice.id)" class="px-8 py-3 bg-slate-900 text-white rounded-xl font-bold hover:bg-indigo-600 transition-all">Pay Invoice</button>
+                </div>
+             </div>
+          </div>
+       </div>
+
+       <!-- Maintenance Summary -->
+       <div class="space-y-6">
+          <h2 class="text-xl font-bold text-slate-900 px-2">Maintenance Status</h2>
+          <div class="bg-white p-8 rounded-[2.5rem] border border-slate-100 shadow-sm space-y-6">
+             <div v-if="maintenanceRequests.length === 0" class="text-center text-slate-400 text-sm py-4">No active requests.</div>
+             <div v-for="req in maintenanceRequests.slice(0, 3)" :key="req.id" class="flex items-center gap-4">
+                <div class="w-10 h-10 bg-slate-50 rounded-xl flex items-center justify-center text-slate-400">
+                   <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /></svg>
+                </div>
+                <div class="flex-1">
+                   <div class="text-sm font-bold text-slate-900 line-clamp-1">{{ req.title }}</div>
+                   <div class="text-[10px] font-black text-amber-600 uppercase tracking-widest">{{ req.status }}</div>
+                </div>
+             </div>
+             <router-link to="/maintenance" class="block text-center py-4 bg-indigo-50 text-indigo-600 rounded-2xl text-sm font-bold hover:bg-indigo-100 transition-all">Go to Tickets</router-link>
+          </div>
+       </div>
     </div>
   </div>
 </template>

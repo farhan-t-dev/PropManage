@@ -25,18 +25,24 @@ const router = createRouter({
           meta: { requiresGuest: true } // Only accessible by guests (not logged in)
         },
         {
-          path: 'properties',
-          name: 'properties',
-          component: PropertiesView
+          path: 'discover',
+          name: 'discover',
+          component: () => import('../views/PropertiesView.vue')
         },
         {
-          path: 'properties/:id',
-          name: 'property-detail',
-          component: PropertyDetailView
+          path: 'unit/:id',
+          name: 'unit-detail',
+          component: () => import('../views/PropertyDetailView.vue')
+        },
+        {
+          path: 'maintenance',
+          name: 'maintenance',
+          component: () => import('../views/MaintenanceView.vue'),
+          meta: { requiresAuth: true }
         },
         {
           path: 'my-bookings',
-          name: 'tenant-dashboard', // Renamed route
+          name: 'tenant-dashboard',
           component: () => import('../views/TenantDashboardView.vue'),
           meta: { requiresAuth: true, requiresRole: ['tenant'] } // Only for authenticated tenants
         },

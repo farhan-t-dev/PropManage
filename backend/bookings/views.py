@@ -24,49 +24,40 @@ class BookingViewSet(viewsets.ModelViewSet):
         user = self.request.user
         if user.role == 'admin':
             return Booking.objects.all()
-        # Tenant sees their bookings, Landlord sees bookings for their properties
+        # Tenant sees their bookings, Landlord sees bookings for their units
         return Booking.objects.filter(
-            Q(tenant=user) | Q(property__owner=user)
-        ).select_related('property', 'tenant') # Optimize queries
+            Q(tenant=user) | Q(unit__property__owner=user)
+        ).select_related('unit__property', 'tenant', 'invoice')
 
     def perform_create(self, serializer):
         try:
             create_booking(
                 user=self.request.user,
-                property_obj=serializer.validated_data['property'],
+                unit=serializer.validated_data['unit'],
                 start_date=serializer.validated_data['start_date'],
                 end_date=serializer.validated_data['end_date']
             )
         except ValidationError as e:
-            raise serializers.ValidationError(e.messages)
+            raise serializers.ValidationError(e.message if hasattr(e, 'message') else e.messages)
             
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def my_properties_bookings(self, request):
-        """
-        Returns a list of bookings for properties owned by the authenticated user (landlord).
-        """
-        if not request.user.is_authenticated or request.user.role != 'landlord':
-            return Response({"detail": "You do not have permission to perform this action."},
-                            status=403)
+        if not request.user.role == 'landlord':
+            return Response({"detail": "Landlords only."}, status=403)
         
-        bookings = Booking.objects.filter(property__owner=request.user).select_related('property', 'tenant', 'invoice')
+        bookings = Booking.objects.filter(unit__property__owner=request.user).select_related('unit__property', 'tenant', 'invoice')
         serializer = self.get_serializer(bookings, many=True)
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def monthly_revenue(self, request):
-        """
-        Calculates monthly revenue for properties owned by the authenticated user (landlord).
-        Revenue is based on confirmed bookings with paid invoices.
-        """
-        if not request.user.is_authenticated or request.user.role != 'landlord':
-            return Response({"detail": "You do not have permission to perform this action."},
-                            status=403)
+        if not request.user.role == 'landlord':
+            return Response({"detail": "Landlords only."}, status=403)
 
         revenue_data = Booking.objects.filter(
-            property__owner=request.user,
-            status='confirmed',
-            invoice__status='paid' # Only consider paid invoices
+            unit__property__owner=request.user,
+            status__in=['confirmed', 'completed'],
+            invoice__status='paid'
         ).annotate(
             year=ExtractYear('start_date'),
             month=ExtractMonth('start_date')
@@ -91,13 +82,11 @@ class BookingViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def confirm(self, request, pk=None):
         booking = self.get_object()
-        if booking.property.owner != request.user:
-            return Response({"detail": "You do not have permission to confirm this booking."},
-                            status=status.HTTP_403_FORBIDDEN)
+        if booking.unit.property.owner != request.user:
+            return Response({"detail": "Not your property."}, status=403)
         
         if booking.status != 'pending':
-            return Response({"detail": f"Booking cannot be confirmed from status: {booking.status}"},
-                            status=status.HTTP_400_BAD_REQUEST)
+            return Response({"detail": f"Cannot confirm from {booking.status}"}, status=400)
 
         booking.status = 'confirmed'
         booking.save()
@@ -106,14 +95,8 @@ class BookingViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[permissions.IsAuthenticated])
     def cancel(self, request, pk=None):
         booking = self.get_object()
-        # Tenant can cancel their own, Landlord can cancel for their property
-        if booking.tenant != request.user and booking.property.owner != request.user:
-            return Response({"detail": "You do not have permission to cancel this booking."},
-                            status=status.HTTP_403_FORBIDDEN)
-
-        if booking.status == 'cancelled':
-            return Response({"detail": "Booking is already cancelled."},
-                            status=status.HTTP_400_BAD_REQUEST)
+        if booking.tenant != request.user and booking.unit.property.owner != request.user:
+            return Response({"detail": "Permission denied."}, status=403)
 
         booking.status = 'cancelled'
         booking.save()
@@ -121,41 +104,25 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], permission_classes=[permissions.IsAuthenticated])
     def download_bookings_csv(self, request):
-        """
-        Streams a CSV file of all bookings for the landlord's properties.
-        """
-        if not request.user.is_authenticated or request.user.role != 'landlord':
-            return Response({"detail": "You do not have permission to perform this action."},
-                            status=403)
+        if not request.user.role == 'landlord':
+            return Response({"detail": "Forbidden"}, status=403)
 
-        bookings = Booking.objects.filter(property__owner=request.user).select_related('property', 'tenant', 'invoice')
+        bookings = Booking.objects.filter(unit__property__owner=request.user).select_related('unit__property', 'tenant', 'invoice')
 
         pseudo_buffer = Echo()
         writer = csv.writer(pseudo_buffer)
 
-        rows = (['Property', 'Tenant', 'Start Date', 'End Date', 'Status', 'Invoice Status', 'Amount'] +
-                [
-                    booking.property.title,
-                    booking.tenant.username,
-                    str(booking.start_date),
-                    str(booking.end_date),
-                    booking.status,
-                    booking.invoice.status if hasattr(booking, 'invoice') else 'N/A',
-                    str(booking.invoice.amount) if hasattr(booking, 'invoice') else '0.00'
-                ] for booking in bookings)
-
-        # Generator to yield header then rows
         def row_generator():
-            yield writer.writerow(['Property', 'Tenant', 'Start Date', 'End Date', 'Status', 'Invoice Status', 'Amount'])
-            for booking in bookings:
+            yield writer.writerow(['Property', 'Unit', 'Tenant', 'Start Date', 'End Date', 'Status', 'Amount'])
+            for b in bookings:
                 yield writer.writerow([
-                    booking.property.title,
-                    booking.tenant.username,
-                    str(booking.start_date),
-                    str(booking.end_date),
-                    booking.status,
-                    booking.invoice.status if hasattr(booking, 'invoice') else 'N/A',
-                    str(booking.invoice.amount) if hasattr(booking, 'invoice') else '0.00'
+                    b.unit.property.title,
+                    b.unit.unit_number,
+                    b.tenant.username,
+                    str(b.start_date),
+                    str(b.end_date),
+                    b.status,
+                    str(b.total_price or 0.00)
                 ])
 
         response = StreamingHttpResponse(row_generator(), content_type="text/csv")

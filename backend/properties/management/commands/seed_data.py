@@ -1,9 +1,8 @@
 from django.core.management.base import BaseCommand
 from django.contrib.auth import get_user_model
-from properties.models import Property
+from properties.models import Property, Unit
 from bookings.models import Booking
-from bookings.services import is_property_available
-from billing.models import Invoice
+from billing.models import Invoice, Transaction
 from decimal import Decimal
 from datetime import date, timedelta
 from django.utils import timezone
@@ -11,143 +10,73 @@ from django.utils import timezone
 User = get_user_model()
 
 class Command(BaseCommand):
-    help = 'Seeds the database with initial properties, users, and historical bookings/invoices'
+    help = 'Elite seeding: Creates Multi-property, Multi-unit data with ledger history'
 
     def add_arguments(self, parser):
-        parser.add_argument(
-            '--clear',
-            action='store_true',
-            help='Clear existing bookings, invoices, and properties before seeding',
-        )
+        parser.add_argument('--clear', action='store_true')
 
     def handle(self, *args, **kwargs):
         if kwargs['clear']:
-            self.stdout.write('Clearing existing data...')
+            self.stdout.write('Clearing old data...')
+            Transaction.objects.all().delete()
             Invoice.objects.all().delete()
             Booking.objects.all().delete()
+            Unit.objects.all().delete()
             Property.objects.all().delete()
-            self.stdout.write('Data cleared.')
 
-        self.stdout.write('Seeding data...')
+        # 1. Users
+        landlord, _ = User.objects.get_or_create(username='landlord_pro', defaults={'role': 'landlord', 'email': 'pro@prop.com'})
+        landlord.set_password('pass123')
+        landlord.save()
 
-        # 1. Create Landlord
-        landlord, created = User.objects.get_or_create(
-            username='landlord_jane',
-            defaults={
-                'email': 'jane@example.com',
-                'role': 'landlord',
-                'first_name': 'Jane',
-                'last_name': 'Host'
-            }
-        )
-        if created:
-            landlord.set_password('pass123')
-            landlord.save()
-            self.stdout.write('Created landlord: landlord_jane')
+        tenant, _ = User.objects.get_or_create(username='tenant_alice', defaults={'role': 'tenant', 'email': 'alice@gmail.com'})
+        tenant.set_password('pass123')
+        tenant.save()
 
-        # 2. Create Tenant
-        tenant, created = User.objects.get_or_create(
-            username='tenant_bob',
-            defaults={
-                'email': 'bob@example.com',
-                'role': 'tenant',
-                'first_name': 'Bob',
-                'last_name': 'Renter'
-            }
-        )
-        if created:
-            tenant.set_password('pass123')
-            tenant.save()
-            self.stdout.write('Created tenant: tenant_bob')
+        # 2. Properties & Units
+        p1 = Property.objects.create(owner=landlord, title='Metropolis Heights', address='100 Skyline Blvd', description='Elite luxury apartments.')
+        p2 = Property.objects.create(owner=landlord, title='Oceanic Resort', address='500 Beach Dr', description='Seaside serenity.')
 
-        # 3. Create Properties
-        properties_data = [
-            {
-                'title': 'Modern Downtown Loft',
-                'description': 'A beautiful industrial loft in the heart of the city.',
-                'address': '456 Main St, Metropolis',
-                'base_price': Decimal('120.00'),
-                'features': {'wifi': True, 'kitchen': True, 'parking': False}
-            },
-            {
-                'title': 'Cozy Seaside Cottage',
-                'description': 'Wake up to the sound of waves.',
-                'address': '101 Beach Rd, Seaside',
-                'base_price': Decimal('200.00'),
-                'features': {'wifi': True, 'kitchen': True, 'view': 'Ocean'}
-            }
+        units = [
+            Unit.objects.create(property=p1, unit_number='101A', title='Executive Studio', base_price=Decimal('150.00'), description='High floor view.'),
+            Unit.objects.create(property=p1, unit_number='202B', title='Family Penthouse', base_price=Decimal('450.00'), description='Spacious 3-bedroom.'),
+            Unit.objects.create(property=p2, unit_number='S1', title='Sunset Villa', base_price=Decimal('300.00'), description='Private pool access.'),
         ]
 
-        props = []
-        for p_data in properties_data:
-            prop, p_created = Property.objects.get_or_create(
-                title=p_data['title'],
-                defaults={
-                    'owner': landlord,
-                    'description': p_data['description'],
-                    'address': p_data['address'],
-                    'base_price': p_data['base_price'],
-                    'features': p_data['features']
-                }
-            )
-            props.append(prop)
-            if p_created:
-                self.stdout.write(f"Created property: {p_data['title']}")
-
-        # 4. Create Historical Bookings & Invoices for Charting
-        self.stdout.write('Generating historical bookings...')
+        # 3. Historical Ledger Data (Last 4 months)
         today = date.today()
+        self.stdout.write('Generating ledger history...')
         
-        # Generate 6 months of data
-        for i in range(6):
-            # Calculate a stable start of the month to avoid shifting dates on subsequent runs
-            month_start = (today - timedelta(days=31 * i)).replace(day=1)
-            
-            for prop in props:
-                start_date = month_start + timedelta(days=5)
-                end_date = month_start + timedelta(days=10)
+        for i in range(4):
+            month_start = (today - timedelta(days=30 * (i+1))).replace(day=1)
+            for idx, unit in enumerate(units):
+                start = month_start + timedelta(days=2 + idx)
+                end = start + timedelta(days=5)
                 
-                # Check if this exact booking already exists
-                existing_booking = Booking.objects.filter(
-                    property=prop,
-                    tenant=tenant,
-                    start_date=start_date,
-                    end_date=end_date
-                ).first()
+                # Create Booking
+                booking = Booking.objects.create(
+                    unit=unit, tenant=tenant, start_date=start, end_date=end,
+                    status='completed', total_price=unit.base_price * 5
+                )
+                
+                # Create Paid Invoice
+                invoice = Invoice.objects.create(
+                    booking=booking, amount=booking.total_price,
+                    due_date=start, status='paid'
+                )
+                
+                # Create Ledger Entries
+                Transaction.objects.create(
+                    invoice=invoice, user=tenant, amount=invoice.amount,
+                    transaction_type='payment', description=f'Payment for {unit.unit_number}',
+                    is_verified=True
+                )
+                
+                # Payout 90% to Landlord (10% fee)
+                Transaction.objects.create(
+                    invoice=invoice, user=landlord, amount=invoice.amount * Decimal('0.9'),
+                    transaction_type='payout', description=f'Earnings for {unit.unit_number}',
+                    is_verified=True
+                )
 
-                if not existing_booking:
-                    # Check if the property is available (not overlapping with OTHER bookings)
-                    if is_property_available(prop, start_date, end_date):
-                        booking = Booking.objects.create(
-                            property=prop,
-                            tenant=tenant,
-                            start_date=start_date,
-                            end_date=end_date,
-                            status='confirmed'
-                        )
-                        # Manually create paid invoices for these historical bookings
-                        duration = (end_date - start_date).days
-                        amount = prop.base_price * duration
-                        Invoice.objects.get_or_create(
-                            booking=booking,
-                            defaults={
-                                'amount': amount,
-                                'due_date': start_date,
-                                'status': 'paid'
-                            }
-                        )
-                    else:
-                        self.stdout.write(f"Skipping overlapping booking for {prop.title} on {start_date}")
-                else:
-                    # If it exists, ensure it has an invoice
-                    if not hasattr(existing_booking, 'invoice'):
-                        duration = (end_date - start_date).days
-                        amount = prop.base_price * duration
-                        Invoice.objects.create(
-                            booking=existing_booking,
-                            amount=amount,
-                            due_date=start_date,
-                            status='paid'
-                        )
-
-        self.stdout.write(self.style.SUCCESS('Successfully seeded data with history!'))
+        self.stdout.write(self.style.SUCCESS('Elite Seed Complete. Platform is ready for professional demo.'))

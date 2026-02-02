@@ -1,77 +1,68 @@
-# PropManage - Elite Property Management & Booking System
+# PropManage - Enterprise-Grade Property Management Spec
 
-**Goal:** Build a production-ready, visually stunning, and architecturally superior property management platform that showcases senior-level proficiency in Django and Vue.js.
-
----
-
-## 1. High-Level Architecture (The "Senior" Stack)
-
-- **Backend:** Django 5.x (REST Framework)
-    - **Versioning:** API v1 structure.
-    - **Security:** JWT with HTTP-only cookies (CSRF protected).
-    - **Performance:** Redis caching for frequent property lookups.
-    - **Documentation:** Auto-generated OpenAPI 3.0 schema (drf-spectacular).
-- **Frontend:** Vue 3 (Composition API) + Vite
-    - **UI:** Tailwind CSS + Shadcn-Vue (Premium component library).
-    - **Data Fetching:** TanStack Query (Vue Query) for caching and optimistic updates.
-    - **State:** Pinia (Persistent user sessions).
-- **Async & Real-time:**
-    - **Workers:** Celery + Redis.
-    - **Real-time:** Django Channels (WebSockets) for instant booking notifications.
-- **Infrastructure:**
-    - **Orchestration:** Docker Compose (Nginx, Gunicorn, Postgres, Redis, Celery, Mailpit).
+**Objective:** To build a high-performance, visually stunning, and operationally complex SaaS platform that handles the full lifecycle of property management.
 
 ---
 
-## 2. Advanced Database & Logic
-
-### Core Entities (Refined)
-1.  **Users:** Custom model with Profile images, Bio, and Role-based permissions (Landlord, Tenant, Admin).
-2.  **Properties:**
-    - `images`: Many-to-one relationship for galleries.
-    - `amenities`: JSONB/Array field for flexible filtering.
-    - `location`: Geocoding support (lat/long).
-3.  **Bookings:**
-    - **Status Machine:** [Draft -> Pending -> Confirmed -> Completed -> Cancelled].
-    - **Collision Logic:** Database-level constraints to prevent double-booking.
-4.  **Financials (Invoices):**
-    - **PDF Generation:** Automated backend PDF generation for receipts.
-    - **Balance Tracking:** User-level ledger for landlords.
+## 1. System Architecture (The "Pro" Stack)
+- **Backend:** Django 5.x (DRF)
+    - **Auth:** JWT via **HTTP-Only Cookies** (Anti-XSS/CSRF).
+    - **Complexity:** Service Layer pattern to separate business logic from views.
+    - **Database:** PostgreSQL with **Atomic Transactions** and **Check Constraints**.
+- **Frontend:** Vue 3 (Composition API) + Tailwind CSS
+    - **State Management:** Pinia + **TanStack Query** (for server-state caching).
+    - **Design:** "Fluid Dashboard" (Clean, minimalist, business-centric).
+- **Operations:** Celery + Redis + WeasyPrint (PDF) + Mailpit (SMTP).
 
 ---
 
-## 3. The Overhaul Sprint Plan
+## 2. Core Feature Blueprint
 
-### Phase 1: Architectural Foundation (Backend Focus)
-- [ ] **Infrastructure:** Modernize `docker-compose.yml` with Nginx, Mailpit, and healthy-check deps.
-- [ ] **API Standard:** Implement standard response wrappers (Success/Error/Pagination).
-- [ ] **Security:** Switch JWT storage to HTTP-only cookies for enhanced security.
-- [ ] **Versioning:** Move all endpoints to `/api/v1/`.
+### A. Advanced Inventory (Multi-Unit)
+- **Multi-Unit Support:** Properties contain Units (Apartments, Rooms, Suites).
+- **Document Vault:** Secure storage for Leases (PDFs) and Tenant IDs.
+- **Amenities:** JSONB tagging for granular unit features.
 
-### Phase 2: Feature Richness (Backend & Logic)
-- [ ] **Media Management:** Implement `easy-thumbnails` or similar for optimized property images.
-- [ ] **Advanced Scheduling:** Add turnover time logic (e.g., 1 day gap between bookings).
-- [ ] **PDF Engine:** Create a Celery task to generate professional PDF invoices via `WeasyPrint`.
-- [ ] **Analytics Engine:** Service layer for complex revenue forecasting and occupancy stats.
+### B. The "Senior" Booking Engine
+- **Turnover Buffers:** Automatically block "Cleaning/Maintenance Gaps" between bookings (e.g., 24h gap).
+- **Dynamic Pricing:** Real-time calculation based on seasons, duration, and guest count.
+- **Conflict Prevention:** Database-level `ExclusionConstraints` to prevent double-booking.
+- **Multi-step Wizard:** Pick Dates -> Choose Unit -> Review Lease -> Confirm.
 
-### Phase 3: Premium UI/UX (Frontend Overhaul)
-- [ ] **Theme System:** Implement a modern, responsive design using a "Fluid UI" approach.
-- [ ] **Dashboard 2.0:**
-    - **Landlord:** Interactive charts (Revenue, Bookings) + Quick Action widgets.
-    - **Tenant:** Booking timeline + Payment history.
-- [ ] **Property Discovery:** Advanced filtering sidebar + Map integration (Leaflet/MapLibre).
-- [ ] **Booking Flow:** Multi-step reservation wizard with real-time price calculation.
+### C. Financial & Accounting (The "WOW" Zone)
+- **Ledger-Based Tracking:** Real accounting logic (Debits/Credits) for landlord balances.
+- **Automated PDF Invoicing:** Celery task generates professional PDF receipts via WeasyPrint.
+- **Owner Payouts:** Tracking revenue vs. management fees.
 
-### Phase 4: Senior Polish
-- [ ] **Real-time Notifications:** WebSockets for "New Booking" alerts.
-- [ ] **Global Error Handling:** Integrated Toast system for every API failure.
-- [ ] **Performance:** Implement `select_related` and `prefetch_related` across all ViewSets.
-- [ ] **Testing:** 90%+ coverage on business logic (availability, invoicing).
+### D. Operations & Maintenance
+- **Ticket System:** Maintenance requests with priority levels and photo attachments.
+- **SLA Tracking:** Timers to track response times for landlord "Senior" benchmarks.
+
+### E. Analytics (Business Intelligence)
+- **Occupancy Heatmaps:** Visual grid showing room availability over time.
+- **Revenue Forecasting:** Predictive trends based on current booking velocity (Historical data).
 
 ---
 
-## 4. Immediate Next Steps
+## 3. Development Sprint Plan
 
-1.  **Docker & Environment:** Update `docker-compose.yml` for production-like local dev.
-2.  **API Versioning & Standard:** Restructure URLs and responses.
-3.  **Frontend Layout:** Implement the "Shell" of the new premium UI.
+### Phase 1: The "Hard" Foundation (Current Focus)
+- [ ] **Infrastructure:** Production-ready `docker-compose` with healthy-checks.
+- [ ] **Security:** Implement HTTP-Only Cookie Authentication.
+- [ ] **Schema Overhaul:** Migrate from "Property" to "Property -> Unit" architecture.
+- [ ] **Lease Model:** Create the Document Vault logic.
+
+### Phase 2: Complex Business Logic
+- [ ] **Booking Service:** Implement the "Buffer Gap" logic and Dynamic Pricing engine.
+- [ ] **Accounting Service:** Build the ledger system for invoices and payouts.
+- [ ] **PDF Engine:** Build the asynchronous PDF generator.
+
+### Phase 3: Premium UI/UX (SaaS Standard)
+- [ ] **Global Layout:** Sidebar-driven app shell with "Glassmorphism" accents.
+- [ ] **Interactive Calendar:** A custom booking calendar showing unit availability.
+- [ ] **Dashboards:** Landlord "Analytics" dashboard vs. Tenant "Resident" dashboard.
+
+### Phase 4: Polish & Performance
+- [ ] **Query Optimization:** Use `prefetch_related` to achieve <100ms API responses.
+- [ ] **Audit Logs:** Track every sensitive change (Price changes, booking cancels).
+- [ ] **Load Testing:** Document the system's ability to handle 100+ concurrent bookings.

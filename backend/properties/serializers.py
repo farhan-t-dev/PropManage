@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Property, PropertyImage
+from .models import Property, PropertyImage, Unit
 from users.serializers import UserSerializer
 
 class PropertyImageSerializer(serializers.ModelSerializer):
@@ -7,8 +7,17 @@ class PropertyImageSerializer(serializers.ModelSerializer):
         model = PropertyImage
         fields = ('id', 'image', 'is_main')
 
+class UnitSerializer(serializers.ModelSerializer):
+    images = PropertyImageSerializer(many=True, read_only=True)
+    property_title = serializers.CharField(source='property.title', read_only=True)
+
+    class Meta:
+        model = Unit
+        fields = '__all__'
+
 class PropertySerializer(serializers.ModelSerializer):
     owner_details = UserSerializer(source='owner', read_only=True)
+    units = UnitSerializer(many=True, read_only=True)
     images = PropertyImageSerializer(many=True, read_only=True)
     uploaded_images = serializers.ListField(
         child=serializers.ImageField(max_length=1000000, allow_empty_file=False, use_url=False),
