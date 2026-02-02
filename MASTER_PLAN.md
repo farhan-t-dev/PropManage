@@ -51,9 +51,9 @@ We will follow a **Headless Architecture** pattern.
 **Goal:** A working API that can handle auth and basic CRUD.
 - [x] Dockerize the stack (Django, Postgres, Redis).
 - [x] Configure `settings.py` for environment variables.
-- [ ] Implement Custom User Model & JWT Authentication (SimpleJWT).
-- [ ] Create `Property` and `Booking` models.
-- [ ] **Milestone:** Admin panel works, Postman collection for Auth/Properties returns 200 OK.
+- [x] Implement Custom User Model & JWT Authentication (SimpleJWT).
+- [x] Create `Property` and `Booking` models.
+- [x] **Milestone:** Admin panel works, Postman collection for Auth/Properties returns 200 OK.
 
 ### Phase 2: The Core Logic (Complex Backend)
 **Goal:** Handle the "business" of property management.
@@ -64,9 +64,9 @@ We will follow a **Headless Architecture** pattern.
 
 ### Phase 3: The Frontend Shell (Vue.js Setup)
 **Goal:** A clean UI that talks to the API.
-- [ ] Setup Vue Router & Pinia stores (`authStore`, `propertyStore`).
-- [ ] Create "Layouts": `AuthLayout` (Login/Register) vs `DashboardLayout` (Sidebar + Content).
-- [ ] Build Login form & JWT storage logic (Axios interceptors).
+- [x] Setup Vue Router & Pinia stores (`authStore`, `propertyStore`).
+- [x] Create "Layouts": `AuthLayout` (Login/Register) vs `DashboardLayout` (Sidebar + Content).
+- [x] Build Login form & JWT storage logic (Axios interceptors).
 
 ### Phase 4: Feature Integration
 **Goal:** Connect Front and Back.

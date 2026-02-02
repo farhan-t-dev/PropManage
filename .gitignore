@@ -25,3 +25,6 @@ Thumbs.db
 
 # Docker
 postgres_data/
+
+# Misc
+git-api.txt

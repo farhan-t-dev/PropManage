@@ -12,10 +12,16 @@ then
     echo "PostgreSQL started"
 fi
 
+# Make migrations (Useful for dev, handle with care in prod)
+echo "Making migrations..."
+python manage.py makemigrations users
+python manage.py makemigrations properties
+python manage.py makemigrations bookings
+python manage.py makemigrations
+
 # Apply database migrations
 echo "Applying database migrations..."
 python manage.py migrate
 
-# Start the server (Development)
-echo "Starting server..."
-python manage.py runserver 0.0.0.0:8000
+# Execute the command passed to the docker container
+exec "$@"

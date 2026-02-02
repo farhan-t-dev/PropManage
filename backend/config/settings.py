@@ -38,6 +38,9 @@ INSTALLED_APPS = [
     
     # Local apps
     'users',
+    'properties',
+    'bookings',
+    'billing',
 ]
 
 MIDDLEWARE = [

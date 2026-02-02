@@ -4,5 +4,7 @@ psycopg2-binary
 celery
 redis
 django-cors-headers
+django-celery-results
 gunicorn
 python-dotenv
+djangorestframework-simplejwt
