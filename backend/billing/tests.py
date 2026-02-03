@@ -1,7 +1,7 @@
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 from datetime import date, timedelta
-from properties.models import Property
+from properties.models import Property, Unit
 from bookings.models import Booking
 from billing.models import Invoice
 from billing.tasks import generate_invoice_for_booking
@@ -18,15 +18,22 @@ class BillingTest(TestCase):
         self.property = Property.objects.create(
             owner=self.landlord,
             title='Test Property',
-            address='Test Addr',
-            base_price=100.00
+            address='Test Addr'
+        )
+        self.unit = Unit.objects.create(
+            property=self.property,
+            title='Test Unit',
+            unit_number='101',
+            base_price=100.00,
+            description='Test Desc'
         )
         self.booking = Booking.objects.create(
-            property=self.property,
+            unit=self.unit,
             tenant=self.tenant,
             start_date=date.today() + timedelta(days=1),
             end_date=date.today() + timedelta(days=3),
-            status='pending'
+            status='pending',
+            total_price=200.00
         )
 
     def test_invoice_generated_on_confirmation(self):
@@ -56,7 +63,7 @@ class BillingTest(TestCase):
         )
 
         self.client.force_authenticate(user=self.tenant)
-        response = self.client.post(f'/api/billing/invoices/{invoice.id}/pay/')
+        response = self.client.post(f'/api/v1/billing/invoices/{invoice.id}/pay/')
         
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         invoice.refresh_from_db()
@@ -71,7 +78,7 @@ class BillingTest(TestCase):
         )
 
         self.client.force_authenticate(user=self.landlord)
-        response = self.client.post(f'/api/billing/invoices/{invoice.id}/pay/')
+        response = self.client.post(f'/api/v1/billing/invoices/{invoice.id}/pay/')
         
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         invoice.refresh_from_db()

@@ -12,3 +12,6 @@ drf-spectacular
 django-filter
 Pillow
 weasyprint
+django-fsm
+channels[daphne]
+channels_redis

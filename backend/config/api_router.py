@@ -5,6 +5,7 @@ from properties.views import PropertyViewSet, UnitViewSet
 from bookings.views import BookingViewSet
 from billing.views import InvoiceViewSet
 from maintenance.views import MaintenanceRequestViewSet
+from properties.views import GlobalSearchView
 
 router = DefaultRouter()
 router.register(r'users', UserViewSet, basename='user')
@@ -16,5 +17,6 @@ router.register(r'maintenance/requests', MaintenanceRequestViewSet, basename='ma
 
 app_name = 'api_v1'
 urlpatterns = [
+    path('search/', GlobalSearchView.as_view(), name='global-search'),
     path('', include(router.urls)),
 ]

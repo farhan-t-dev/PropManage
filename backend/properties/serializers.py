@@ -1,6 +1,11 @@
 from rest_framework import serializers
-from .models import Property, PropertyImage, Unit
+from .models import Property, PropertyImage, Unit, Document
 from users.serializers import UserSerializer
+
+class DocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Document
+        fields = '__all__'
 
 class PropertyImageSerializer(serializers.ModelSerializer):
     class Meta:

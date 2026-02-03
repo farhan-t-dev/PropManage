@@ -1,5 +1,6 @@
 from django.db import models
 from django.conf import settings
+from django_fsm import FSMField, transition
 
 class MaintenanceRequest(models.Model):
     PRIORITY_CHOICES = (
@@ -31,7 +32,12 @@ class MaintenanceRequest(models.Model):
     description = models.TextField()
     category = models.CharField(max_length=20, choices=CATEGORY_CHOICES, default='other')
     priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='medium')
-    status = models.CharField(max_length=15, choices=STATUS_CHOICES, default='pending')
+    
+    # State Machine Field
+    status = FSMField(default='pending', choices=STATUS_CHOICES)
+    
+    # Operations Data
+    cost = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -39,6 +45,22 @@ class MaintenanceRequest(models.Model):
 
     def __str__(self):
         return f"Ticket #{self.id} - {self.title} ({self.status})"
+
+    # Transitions
+    @transition(field=status, source='pending', target='in_progress')
+    def start_work(self):
+        pass
+
+    def can_resolve(self):
+        return self.cost is not None and self.cost > 0
+
+    @transition(field=status, source='in_progress', target='resolved', conditions=[can_resolve])
+    def resolve(self):
+        pass
+
+    @transition(field=status, source=['pending', 'in_progress'], target='cancelled')
+    def cancel(self):
+        pass
 
 class MaintenancePhoto(models.Model):
     request = models.ForeignKey(MaintenanceRequest, on_delete=models.CASCADE, related_name='photos')

@@ -1,0 +1,149 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #f0f4ff;
+  --color-brand-100: #e0e9fe;
+  --color-brand-200: #c1d3fe;
+  --color-brand-300: #91b1fd;
+  --color-brand-400: #5b83f9;
+  --color-brand-500: #3559f3;
+  --color-brand-600: #2565fa;
+  --color-brand-700: #1d3edb;
+  --color-brand-800: #1e33b1;
+  --color-brand-900: #1e308c;
+  --color-brand-950: #171e55;
+
+  --color-surface-50: #f8fafc;
+  --color-surface-100: #f1f5f9;
+  --color-surface-200: #e2e8f0;
+  --color-surface-300: #cbd5e1;
+  --color-surface-400: #94a3b8;
+  --color-surface-500: #64748b;
+  --color-surface-600: #475569;
+  --color-surface-700: #334155;
+  --color-surface-800: #1e293b;
+  --color-surface-900: #0f172a;
+
+  --radius-4xl: 2rem;
+  --radius-5xl: 2.5rem;
+
+  --animate-fade-in: fadeIn 0.5s ease-out;
+
+  @keyframes fadeIn {
+    0% { opacity: 0; transform: translateY(10px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+}
+
+:root {
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--color-surface-50);
+  color: var(--color-surface-900);
+}
+
+/* Base Utility Classes using CSS Variables */
+.input-field {
+  width: 100%;
+  padding: 0.875rem 1.25rem;
+  background-color: white;
+  border: 1px solid var(--color-surface-200);
+  border-radius: 1rem;
+  outline: none;
+  transition: all 0.2s;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.input-field:focus {
+  border-color: var(--color-brand-500);
+  box-shadow: 0 0 0 4px rgba(53, 89, 243, 0.1);
+}
+
+.input-field::placeholder {
+  color: var(--color-surface-400);
+}
+
+.btn-primary {
+  padding: 0.875rem 1.5rem;
+  background-color: var(--color-brand-600);
+  color: white;
+  font-weight: 700;
+  border-radius: 1rem;
+  box-shadow: 0 10px 15px -3px rgba(37, 101, 250, 0.2);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: none;
+  cursor: pointer;
+}
+
+.btn-primary:hover {
+  background-color: var(--color-brand-700);
+  box-shadow: 0 20px 25px -5px rgba(37, 101, 250, 0.3);
+}
+
+.btn-primary:active {
+  transform: scale(0.95);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.btn-secondary {
+  padding: 0.875rem 1.5rem;
+  background-color: white;
+  color: var(--color-surface-900);
+  font-weight: 700;
+  border-radius: 1rem;
+  border: 1px solid var(--color-surface-200);
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.btn-secondary:hover {
+  background-color: var(--color-surface-50);
+  border-color: var(--color-surface-300);
+}
+
+.btn-secondary:active {
+  transform: scale(0.95);
+}
+
+.btn-ghost {
+  padding: 0.875rem 1.5rem;
+  color: var(--color-surface-600);
+  font-weight: 700;
+  border-radius: 1rem;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.btn-ghost:hover {
+  background-color: var(--color-surface-100);
+}
+
+.btn-ghost:active {
+  transform: scale(0.95);
+}
