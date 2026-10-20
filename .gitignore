@@ -41,3 +41,7 @@ Thumbs.db
 # --- Project Specific ---
 git-api.txt
 frontend/nginx.conf.old
+
+# --- Tooling artifacts ---
+.playwright-mcp/
+*.log
