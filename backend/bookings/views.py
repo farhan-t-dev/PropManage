@@ -31,12 +31,15 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         try:
-            create_booking(
+            booking = create_booking(
                 user=self.request.user,
                 unit=serializer.validated_data['unit'],
                 start_date=serializer.validated_data['start_date'],
                 end_date=serializer.validated_data['end_date']
             )
+            # Bind the persisted booking so the 201 response includes
+            # id / status / total_price / invoice instead of raw validated data.
+            serializer.instance = booking
         except ValidationError as e:
             raise serializers.ValidationError(e.message if hasattr(e, 'message') else e.messages)
             

@@ -1,6 +1,7 @@
 from rest_framework import viewsets, permissions, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from django.db.models import Q
 from django.http import FileResponse
 from .models import Property, Unit, Document
 from .serializers import PropertySerializer, UnitSerializer, DocumentSerializer

@@ -33,9 +33,9 @@ class PropertySerializer(serializers.ModelSerializer):
     class Meta:
         model = Property
         fields = (
-            'id', 'owner', 'owner_details', 'title', 'description', 
-            'address', 'features', 'base_price', 'is_active', 
-            'images', 'uploaded_images', 'created_at', 'updated_at'
+            'id', 'owner', 'owner_details', 'title', 'description',
+            'address', 'units', 'images', 'uploaded_images',
+            'created_at', 'updated_at'
         )
         read_only_fields = ('owner', 'created_at', 'updated_at')
 
