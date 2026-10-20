@@ -1,61 +1,90 @@
-import { create } from 'zustand';
-import api from '../api';
+import { create } from "zustand";
+import api from "../api";
 
+/**
+ * A 401 on anything but an auth endpoint means the access cookie expired or
+ * was never issued. Quietly drop the cached identity; the route guards will
+ * bounce to /login. Registering the interceptor here (rather than in the api
+ * module) avoids a circular import between the two.
+ */
+api.interceptors.response.use(
+  (res) => res,
+  (error) => {
+    const status = error?.response?.status;
+    const url = error?.config?.url || "";
+    const isAuthCall = /\/auth\/|\/users\/register\//.test(url);
+    if (
+      status === 401 &&
+      !isAuthCall &&
+      !error?.config?.skipAuthReset &&
+      useAuthStore.getState().isAuthenticated
+    ) {
+      useAuthStore.getState().logout_local();
+    }
+    return Promise.reject(error);
+  },
+);
+
+/**
+ * Identity store. The JWT lives in an HttpOnly cookie, so only the user
+ * object is cached here — in memory and mirrored to localStorage so a page
+ * refresh doesn't flash the logged-out shell.
+ */
 export const useAuthStore = create((set, get) => ({
-  user: JSON.parse(localStorage.getItem('user')) || null,
-  isAuthenticated: !!localStorage.getItem('user'),
+  user: readCachedUser(),
+  isAuthenticated: !!readCachedUser(),
+  /** True until the first /users/me/ round-trip settles. */
+  bootstrapped: false,
 
   login: async (username, password) => {
-    try {
-      await api.post('/auth/token/', { username, password });
-      await get().fetchUser();
-      return true;
-    } catch (error) {
-      console.error('Login failed', error);
-      throw error;
-    }
+    await api.post("/auth/token/", { username, password });
+    await get().fetchUser();
   },
 
   register: async (userData) => {
-    try {
-      await api.post('/users/register/', userData);
-      // Automatically login after registration
-      await get().login(userData.username, userData.password);
-      return true;
-    } catch (error) {
-      console.error('Registration failed', error);
-      throw error;
-    }
+    await api.post("/users/register/", userData);
+    await get().login(userData.username, userData.password);
   },
 
   fetchUser: async () => {
     try {
-      const response = await api.get('/users/me/');
-      const user = response.data;
-      set({ user, isAuthenticated: true });
-      localStorage.setItem('user', JSON.stringify(user));
-    } catch (error) {
-      console.error('Failed to fetch user details', error);
+      const res = await api.get("/users/me/");
+      set({ user: res.data, isAuthenticated: true });
+      localStorage.setItem("user", JSON.stringify(res.data));
+      return res.data;
+    } catch {
       get().logout_local();
+      return null;
+    } finally {
+      set({ bootstrapped: true });
     }
   },
 
   logout: async () => {
     try {
-      await api.post('/auth/logout/');
+      await api.post("/auth/logout/");
     } finally {
       get().logout_local();
     }
   },
 
   logout_local: () => {
+    localStorage.removeItem("user");
     set({ user: null, isAuthenticated: false });
-    localStorage.removeItem('user');
   },
 
   checkAuth: async () => {
-    if (!get().user) {
-      await get().fetchUser();
-    }
-  }
+    if (get().bootstrapped) return;
+    // A cached identity may be stale; always revalidate on boot.
+    await get().fetchUser();
+  },
 }));
+
+function readCachedUser() {
+  try {
+    const raw = localStorage.getItem("user");
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}

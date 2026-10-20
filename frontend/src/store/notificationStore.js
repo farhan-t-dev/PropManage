@@ -1,63 +1,120 @@
-import { create } from 'zustand';
-import { wsUrl } from '../api';
+import { create } from "zustand";
+import { wsUrl } from "../api";
+import { useAuthStore } from "./authStore";
+
+/**
+ * Toast + realtime channel.
+ *
+ * `showNotification(message, type)` is the imperative API called across the
+ * app; the same store owns the WebSocket that Django Channels pushes to, and
+ * keeps a short history so the header bell has something to show.
+ */
+const HISTORY_LIMIT = 12;
 
 export const useNotificationStore = create((set, get) => ({
   message: null,
-  type: 'success',
+  type: "success",
   isVisible: false,
   timeoutId: null,
+
   socket: null,
   isConnected: false,
+  retryTimer: null,
+  history: [],
 
-  showNotification: (message, type = 'success', duration = 3000) => {
-    const { timeoutId } = get();
+  showNotification: (message, type = "success", duration = 3600) => {
+    const { timeoutId, history } = get();
     if (timeoutId) clearTimeout(timeoutId);
 
-    const newTimeoutId = setTimeout(() => {
-      get().hideNotification();
-    }, duration);
+    const entry = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      message,
+      type,
+      at: new Date().toISOString(),
+      read: false,
+    };
 
-    set({ message, type, isVisible: true, timeoutId: newTimeoutId });
+    const id = duration
+      ? setTimeout(() => get().hideNotification(), duration)
+      : null;
+
+    set({
+      message,
+      type,
+      isVisible: true,
+      timeoutId: id,
+      history: [entry, ...history].slice(0, HISTORY_LIMIT),
+    });
   },
 
   hideNotification: () => {
     const { timeoutId } = get();
     if (timeoutId) clearTimeout(timeoutId);
-    set({ isVisible: false, message: null, type: 'success', timeoutId: null });
+    set({ isVisible: false, timeoutId: null });
   },
 
+  markAllRead: () => {
+    set({ history: get().history.map((h) => ({ ...h, read: true })) });
+  },
+
+  /** Reconnects with backoff while the socket is unavailable. */
   connect: () => {
-    const { socket } = get();
-    if (socket) return;
+    if (get().socket || !useAuthStore.getState().isAuthenticated) return;
 
-    const newSocket = new WebSocket(wsUrl());
+    let socket;
+    try {
+      socket = new WebSocket(wsUrl());
+    } catch {
+      return;
+    }
 
-    newSocket.onopen = () => {
-      set({ isConnected: true });
-      console.log('WS Connected');
+    socket.onopen = () => {
+      set({ isConnected: true, retryTimer: null });
     };
 
-    newSocket.onmessage = (event) => {
+    socket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        get().showNotification(data.message, data.type || 'info');
-      } catch (e) {
-        console.error('WS Error', e);
+        if (data?.message) {
+          get().showNotification(data.message, data.type || "info", 6000);
+        }
+      } catch {
+        /* non-JSON payload — ignore */
       }
     };
 
-    newSocket.onclose = () => {
-      set({ isConnected: false, socket: null });
+    socket.onclose = () => {
+      const wasClean = socket.readyState === 3;
+      set({ socket: null, isConnected: false });
+      // Retry with a fixed backoff, but only while still signed in.
+      const stillAuthed = !!useAuthStore.getState().user;
+      if (!stillAuthed) return;
+      const timer = setTimeout(() => get().connect(), wasClean ? 4000 : 6000);
+      set({ retryTimer: timer });
     };
 
-    set({ socket: newSocket });
+    socket.onerror = () => {
+      try {
+        socket.close();
+      } catch {
+        /* already closed */
+      }
+    };
+
+    set({ socket });
   },
 
   disconnect: () => {
-    const { socket } = get();
+    const { socket, retryTimer } = get();
+    if (retryTimer) clearTimeout(retryTimer);
     if (socket) {
-      socket.close();
-      set({ socket: null, isConnected: false });
+      socket.onclose = null;
+      try {
+        socket.close();
+      } catch {
+        /* noop */
+      }
     }
-  }
+    set({ socket: null, isConnected: false, retryTimer: null });
+  },
 }));

@@ -1,136 +1,242 @@
-import React, { useState, useEffect } from 'react';
-import api from '../api';
-import PropertyCard from '../components/PropertyCard';
-import { BaseButton } from '../components/BaseButton';
-import { BaseCard } from '../components/BaseCard';
-import { Search, SlidersHorizontal, X } from 'lucide-react';
+import { useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
+import { LayoutGrid, RotateCcw, Search } from "lucide-react";
+import api from "../api";
+import { listOf, money } from "../lib/format";
+import { SkeletonCards } from "../components/ui/Skeleton";
+import EmptyState from "../components/ui/EmptyState";
+import Button from "../components/ui/Button";
+import Field, { Input } from "../components/ui/Field";
+import UnitCard from "../components/UnitCard";
 
-const Discover = () => {
+const PAGE_SIZE = 12;
+
+export default function Discover() {
+  // Filters live in the URL so a search can be shared or bookmarked.
+  const [params, setParams] = useSearchParams();
+  const search = params.get("search") || "";
+  const minPrice = params.get("min_price") || "";
+  const maxPrice = params.get("max_price") || "";
+  const ordering = params.get("ordering") || "";
+
+  const [draft, setDraft] = useState({
+    search,
+    min_price: minPrice,
+    max_price: maxPrice,
+  });
   const [units, setUnits] = useState([]);
+  const [count, setCount] = useState(0);
+  const [nextPage, setNextPage] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [minPrice, setMinPrice] = useState('');
-  const [maxPrice, setMaxPrice] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
+  const [error, setError] = useState(null);
 
-  const fetchUnits = async () => {
-    setLoading(true);
-    try {
-      const params = {
-        search,
-        min_price: minPrice,
-        max_price: maxPrice
-      };
-      const res = await api.get('/units/', { params });
-      setUnits(res.data.results || res.data);
-    } catch (err) {
-      console.error('Failed to load units.', err);
-    } finally {
-      setLoading(false);
-    }
-  };
+  useEffect(() => {
+    setDraft({ search, min_price: minPrice, max_price: maxPrice });
+  }, [search, minPrice, maxPrice]);
+
+  const fetchUnits = useCallback(
+    async (append = false) => {
+      setLoading(true);
+      setError(null);
+      try {
+        const query = { page_size: PAGE_SIZE };
+        if (search) query.search = search;
+        if (minPrice) query.min_price = minPrice;
+        if (maxPrice) query.max_price = maxPrice;
+        if (ordering) query.ordering = ordering;
+
+        const res = await api.get("/units/", { params: query });
+        const data = res.data;
+        const rows = listOf(data);
+        setUnits((prev) => (append ? [...prev, ...rows] : rows));
+        setCount(data.count ?? rows.length);
+        setNextPage(data.next || null);
+      } catch (err) {
+        if (!append) setUnits([]);
+        setError(
+          err?.response?.status === 401
+            ? "Sign in to browse the full inventory."
+            : "Could not load units. The API may be restarting — try again.",
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [search, minPrice, maxPrice, ordering],
+  );
 
   useEffect(() => {
     fetchUnits();
-  }, [minPrice, maxPrice]);
+  }, [fetchUnits]);
+
+  function applyFilters(e) {
+    e?.preventDefault();
+    const next = new URLSearchParams();
+    if (draft.search.trim()) next.set("search", draft.search.trim());
+    if (draft.min_price) next.set("min_price", draft.min_price);
+    if (draft.max_price) next.set("max_price", draft.max_price);
+    if (ordering) next.set("ordering", ordering);
+    setParams(next);
+  }
+
+  function clearFilters() {
+    setDraft({ search: "", min_price: "", max_price: "" });
+    setParams(new URLSearchParams());
+  }
+
+  const hasFilters = !!(search || minPrice || maxPrice || ordering);
 
   return (
-    <div className="space-y-10">
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-8">
-        <div className="max-w-xl">
-          <h1 className="text-5xl font-black text-surface-900 tracking-tight mb-3">Discover Suites</h1>
-          <p className="text-lg text-surface-500">Premium living spaces curated for the modern professional.</p>
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h2 className="display text-[28px] font-semibold text-ink-900">
+            Available units
+          </h2>
+          <p className="mt-1 text-[14px] text-ink-400">
+            {loading
+              ? "Loading inventory…"
+              : `${count} unit${count === 1 ? "" : "s"} across the portfolio`}
+          </p>
         </div>
-        
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <div className="relative flex-1 md:w-80 group">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-400 group-focus-within:text-brand-500 transition-colors" />
-            <input 
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              onKeyUp={(e) => e.key === 'Enter' && fetchUnits()}
-              type="text" 
-              placeholder="Search city, area or suite..." 
-              className="input-field pl-12"
-            />
-          </div>
-          <BaseButton variant="secondary" onClick={() => setShowFilters(!showFilters)}>
-            <SlidersHorizontal className="w-4 h-4 mr-2" />
-            Filters
-          </BaseButton>
-        </div>
-      </div>
 
-      <div className="flex flex-col lg:flex-row gap-10">
-        {showFilters && (
-          <aside className="w-full lg:w-72 space-y-6 animate-fade-in">
-            <BaseCard className="sticky top-28">
-              <div className="flex items-center justify-between mb-8">
-                <h3 className="text-xl font-bold text-surface-900">Filters</h3>
-                <button onClick={() => setShowFilters(false)} className="lg:hidden p-2 text-surface-400">
-                   <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              <div className="space-y-8">
-                <div>
-                  <label className="block text-sm font-bold text-surface-700 mb-4">Price per Night</label>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400 text-xs">$</span>
-                      <input 
-                        value={minPrice} 
-                        onChange={(e) => setMinPrice(e.target.value)} 
-                        type="number" 
-                        placeholder="Min" 
-                        className="w-full pl-7 pr-3 py-2.5 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-colors"
-                      />
-                    </div>
-                    <div className="relative">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400 text-xs">$</span>
-                      <input 
-                        value={maxPrice} 
-                        onChange={(e) => setMaxPrice(e.target.value)} 
-                        type="number" 
-                        placeholder="Max" 
-                        className="w-full pl-7 pr-3 py-2.5 bg-surface-50 border border-surface-200 rounded-xl text-sm outline-none focus:border-brand-500 transition-colors"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <BaseButton onClick={fetchUnits} className="w-full mt-10">Apply Filters</BaseButton>
-              <BaseButton variant="ghost" onClick={() => { setMinPrice(''); setMaxPrice(''); setSearch(''); }} className="w-full mt-2 text-surface-400">Clear All</BaseButton>
-            </BaseCard>
-          </aside>
-        )}
-
-        <div className="flex-1">
-          {loading ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-               {[1,2,3,4,5,6].map(n => (
-                 <div key={n} className="h-[420px] bg-white border border-surface-100 rounded-[2.5rem] p-4 space-y-4 animate-pulse">
-                    <div className="w-full h-56 bg-surface-50 rounded-3xl"></div>
-                    <div className="h-6 w-2/3 bg-surface-50 rounded-full"></div>
-                    <div className="h-4 w-full bg-surface-50 rounded-full"></div>
-                 </div>
-               ))}
-            </div>
-          ) : units.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-32 text-center bg-white rounded-4xl border border-surface-100 border-dashed">
-                <h3 className="text-2xl font-bold text-surface-900 mb-2">No units found</h3>
-                <p className="text-surface-500 max-w-sm mx-auto">Try adjusting your filters.</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-8">
-              {units.map(unit => <PropertyCard key={unit.id} property={unit} />)}
-            </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-2 text-[13px] text-ink-500">
+            Sort
+            <select
+              value={ordering}
+              onChange={(e) => {
+                const next = new URLSearchParams(params);
+                if (e.target.value) next.set("ordering", e.target.value);
+                else next.delete("ordering");
+                setParams(next);
+              }}
+              className="field w-auto py-1.5 text-[13px]"
+            >
+              <option value="">Default</option>
+              <option value="base_price">Price, low to high</option>
+              <option value="-base_price">Price, high to low</option>
+            </select>
+          </label>
+          {hasFilters && (
+            <Button variant="ghost" size="sm" onClick={clearFilters}>
+              <RotateCcw className="h-3.5 w-3.5" aria-hidden="true" />
+              Clear
+            </Button>
           )}
         </div>
       </div>
+
+      <form
+        onSubmit={applyFilters}
+        className="flex flex-wrap items-end gap-3 rounded-card border border-crete-300 bg-crete-50 p-4 shadow-hairline"
+      >
+        <Field label="Search" htmlFor="q" className="min-w-[12rem] flex-1">
+          <div className="relative">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-300"
+              aria-hidden="true"
+            />
+            <Input
+              id="q"
+              value={draft.search}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, search: e.target.value }))
+              }
+              placeholder="Unit, number or property"
+              className="pl-9"
+            />
+          </div>
+        </Field>
+        <Field label="Min $ / night" htmlFor="min_price" className="w-32">
+          <Input
+            id="min_price"
+            type="number"
+            min="0"
+            value={draft.min_price}
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, min_price: e.target.value }))
+            }
+            placeholder="0"
+          />
+        </Field>
+        <Field label="Max $ / night" htmlFor="max_price" className="w-32">
+          <Input
+            id="max_price"
+            type="number"
+            min="0"
+            value={draft.max_price}
+            onChange={(e) =>
+              setDraft((d) => ({ ...d, max_price: e.target.value }))
+            }
+            placeholder="1000"
+          />
+        </Field>
+        <Button type="submit" variant="secondary">
+          Apply filters
+        </Button>
+      </form>
+
+      {loading ? (
+        <SkeletonCards count={6} />
+      ) : error ? (
+        <div className="rounded-card border border-crete-300 bg-crete-50">
+          <EmptyState
+            icon={LayoutGrid}
+            title="Inventory unavailable"
+            description={error}
+            action={
+              <Button variant="secondary" size="sm" onClick={() => fetchUnits()}>
+                Try again
+              </Button>
+            }
+          />
+        </div>
+      ) : units.length === 0 ? (
+        <div className="rounded-card border border-crete-300 bg-crete-50">
+          <EmptyState
+            icon={LayoutGrid}
+            title={hasFilters ? "No units match those filters" : "No units listed yet"}
+            description={
+              hasFilters
+                ? "Widen the price range or clear the filters to see the whole portfolio."
+                : "Once a landlord registers a property and its units, they appear here."
+            }
+            action={
+              hasFilters ? (
+                <Button variant="secondary" size="sm" onClick={clearFilters}>
+                  Clear filters
+                </Button>
+              ) : null
+            }
+          />
+        </div>
+      ) : (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+            {units.map((unit) => (
+              <UnitCard key={unit.id} unit={unit} />
+            ))}
+          </div>
+          {nextPage && (
+            <div className="flex justify-center pt-2">
+              <Button
+                variant="secondary"
+                onClick={() => fetchUnits(true)}
+                loading={loading}
+              >
+                Load more units
+              </Button>
+            </div>
+          )}
+        </>
+      )}
+
+      {!loading && units.length > 0 && (
+        <p className="num text-center text-[12.5px] text-ink-400">
+          showing {units.length} of {count} · from {money(Math.min(...units.map((u) => Number(u.base_price) || 0)))} per night
+        </p>
+      )}
     </div>
   );
-};
-
-export default Discover;
+}

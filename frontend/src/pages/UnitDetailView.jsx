@@ -1,197 +1,357 @@
-import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import api from '../api';
-import { useNotificationStore } from '../store/notificationStore';
-import { useAuthStore } from '../store/authStore';
-import { 
-  Calendar, MapPin, Users, Bed, Bath, 
-  ChevronRight, ShieldCheck, CheckCircle2, Star
-} from 'lucide-react';
-import { BaseButton } from '../components/BaseButton';
-import { BaseCard } from '../components/BaseCard';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import {
+  AlertTriangle,
+  ArrowLeft,
+  BedDouble,
+  Calendar,
+  CheckCircle2,
+  Clock,
+  Maximize2,
+  Users,
+} from "lucide-react";
+import api from "../api";
+import { money, nightsBetween, todayISO } from "../lib/format";
+import { useAuthStore } from "../store/authStore";
+import { useNotificationStore } from "../store/notificationStore";
+import FloorPlan from "../components/FloorPlan";
+import Button from "../components/ui/Button";
+import Field, { Input } from "../components/ui/Field";
+import { Skeleton } from "../components/ui/Skeleton";
+import StatusTag from "../components/ui/StatusTag";
 
-const UnitDetailView = () => {
+export default function UnitDetailView() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { showNotification } = useNotificationStore();
-  const { isAuthenticated, user } = useAuthStore();
-  
+  const { isAuthenticated } = useAuthStore();
+  const showNotification = useNotificationStore((s) => s.showNotification);
+
   const [unit, setUnit] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [bookingLoading, setBookingLoading] = useState(false);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [notFound, setNotFound] = useState(false);
+
+  const [startDate, setStartDate] = useState(todayISO(7));
+  const [endDate, setEndDate] = useState(todayISO(10));
+  const [availability, setAvailability] = useState(null);
+  const [checking, setChecking] = useState(false);
+  const [booking, setBooking] = useState(false);
 
   useEffect(() => {
-    const fetchUnit = async () => {
-      try {
-        const res = await api.get(`/units/${id}/`);
-        setUnit(res.data);
-      } catch (err) {
-        showNotification('Failed to load unit details', 'error');
-        navigate('/discover');
-      } finally {
-        setLoading(false);
-      }
+    let cancelled = false;
+    setLoading(true);
+    setNotFound(false);
+    api
+      .get(`/units/${id}/`)
+      .then((res) => {
+        if (!cancelled) setUnit(res.data);
+      })
+      .catch(() => {
+        if (!cancelled) setNotFound(true);
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
     };
-    fetchUnit();
   }, [id]);
 
-  const handleBooking = async (e) => {
-    e.preventDefault();
-    if (!isAuthenticated) {
-      showNotification('Please login to book', 'warning');
-      navigate('/login');
+  // Live availability check — debounced so typing dates doesn't hammer the API.
+  const checkAvailability = useCallback(async () => {
+    if (!unit || !startDate || !endDate) return;
+    if (nightsBetween(startDate, endDate) < 1) {
+      setAvailability(false);
       return;
     }
-
-    setBookingLoading(true);
+    setChecking(true);
     try {
-      await api.post('/bookings/', {
-        unit: id,
-        start_date: startDate,
-        end_date: endDate
+      const res = await api.get(`/units/${unit.id}/check_availability/`, {
+        params: { start_date: startDate, end_date: endDate },
       });
-      showNotification('Booking request submitted! Waiting for landlord confirmation.', 'success');
-      navigate('/my-bookings');
-    } catch (err) {
-      const msg = err.response?.data?.detail || 'Booking failed. Check availability.';
-      showNotification(msg, 'error');
+      setAvailability(!!res.data.available);
+    } catch {
+      setAvailability(null);
     } finally {
-      setBookingLoading(false);
+      setChecking(false);
     }
-  };
+  }, [unit, startDate, endDate]);
 
-  if (loading) return <div className="py-20 text-center animate-pulse text-surface-400 font-bold">Loading Suite Details...</div>;
-  if (!unit) return null;
+  useEffect(() => {
+    if (!unit) return;
+    const t = setTimeout(checkAvailability, 400);
+    return () => clearTimeout(t);
+  }, [unit, startDate, endDate, checkAvailability]);
+
+  const nights = useMemo(
+    () => nightsBetween(startDate, endDate),
+    [startDate, endDate],
+  );
+  const total = useMemo(
+    () => (Number(unit?.base_price) || 0) * nights,
+    [unit?.base_price, nights],
+  );
+
+  async function reserve() {
+    if (!isAuthenticated) {
+      showNotification("Sign in to reserve this unit.", "warning");
+      navigate("/login", { state: { from: { pathname: `/unit/${id}` } } });
+      return;
+    }
+    setBooking(true);
+    try {
+      const res = await api.post("/bookings/", {
+        unit: unit.id,
+        start_date: startDate,
+        end_date: endDate,
+      });
+      showNotification(
+        res.data?.id
+          ? `Reservation requested for ${unit.title}. Awaiting landlord confirmation.`
+          : `Reservation requested for ${unit.title}.`,
+        "success",
+      );
+      navigate("/my-bookings");
+    } catch (err) {
+      const data = err?.response?.data;
+      const msg = Array.isArray(data)
+        ? data.join(" ")
+        : data?.detail ||
+          data?.non_field_errors?.[0] ||
+          "The unit could not be reserved for these dates.";
+      showNotification(msg, "error");
+      checkAvailability();
+    } finally {
+      setBooking(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+        <div className="space-y-4">
+          <Skeleton className="h-4 w-40" />
+          <Skeleton className="h-9 w-2/3" />
+          <Skeleton className="h-[22rem] w-full rounded-card" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+        </div>
+        <Skeleton className="h-80 w-full rounded-card" />
+      </div>
+    );
+  }
+
+  if (notFound || !unit) {
+    return (
+      <div className="rounded-card border border-crete-300 bg-crete-50 py-20 text-center">
+        <h2 className="display text-[22px] font-semibold text-ink-900">
+          That unit is not in the inventory.
+        </h2>
+        <p className="mt-2 text-[14px] text-ink-400">
+          It may have been removed, or the link is out of date.
+        </p>
+        <Link to="/discover" className="mt-6 inline-block">
+          <Button variant="secondary">Back to Discover</Button>
+        </Link>
+      </div>
+    );
+  }
+
+  const features = unit.features || {};
+  const specs = [
+    features.bedrooms != null && {
+      icon: BedDouble,
+      label: "Bedrooms",
+      value: features.bedrooms,
+    },
+    features.guests != null && {
+      icon: Users,
+      label: "Capacity",
+      value: `sleeps ${features.guests}`,
+    },
+    features.area != null && {
+      icon: Maximize2,
+      label: "Floor area",
+      value: `${features.area} m²`,
+    },
+    features.bathrooms != null && {
+      icon: Users,
+      label: "Bathrooms",
+      value: features.bathrooms,
+    },
+  ].filter(Boolean);
 
   return (
-    <div className="space-y-12 pb-20 animate-fade-in">
-      {/* Header & Gallery */}
-      <div className="space-y-6">
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
-          <div>
-            <div className="flex items-center gap-2 text-brand-600 text-xs font-black uppercase tracking-widest mb-3">
-               <MapPin className="w-4 h-4" /> {unit.property_title}
+    <div className="space-y-6">
+      <Link
+        to="/discover"
+        className="inline-flex items-center gap-1.5 text-[13.5px] text-ink-400 transition-colors hover:text-ink-700"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+        {unit.property_title}
+      </Link>
+
+      <div className="grid gap-6 lg:grid-cols-[1.55fr_1fr]">
+        {/* Left — the plan and the description */}
+        <div className="space-y-5">
+          <div className="overflow-hidden rounded-card border border-crete-300 bg-crete-50 shadow-hairline">
+            <div className="flex items-center justify-between border-b border-crete-200 px-4 py-2.5">
+              <span className="num text-[12px] text-ink-500">
+                UNIT {unit.unit_number || "—"}
+              </span>
+              <span className="text-[12px] text-ink-400">generated plan</span>
             </div>
-            <h1 className="text-4xl md:text-5xl font-black text-surface-900 tracking-tight">{unit.title}</h1>
+            <FloorPlan unit={unit} className="block w-full" />
           </div>
-          <div className="flex items-center gap-2 text-surface-500 font-bold">
-            <Star className="w-5 h-5 text-amber-400 fill-amber-400" />
-            4.9 <span className="text-surface-300 font-medium">/ 12 reviews</span>
+
+          <div>
+            <p className="text-[13px] text-ink-400">{unit.property_title}</p>
+            <h2 className="display mt-1 text-[30px] font-semibold text-ink-900">
+              {unit.title}
+            </h2>
+            <p className="mt-3 max-w-[62ch] text-[15px] leading-relaxed text-ink-500">
+              {unit.description ||
+                "No description has been recorded for this unit yet."}
+            </p>
           </div>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-[600px]">
-          <div className="md:col-span-2 rounded-4xl overflow-hidden shadow-2xl">
-            <img 
-                src={unit.images?.[0]?.image || 'https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?auto=format&fit=crop&q=80&w=1200'} 
-                className="w-full h-full object-cover" 
-                alt="Main view"
-            />
-          </div>
-          <div className="grid grid-rows-2 gap-4">
-             <div className="rounded-3xl overflow-hidden shadow-xl">
-               <img src="https://images.unsplash.com/photo-1484154218962-a197022b5858?auto=format&fit=crop&q=80&w=600" className="w-full h-full object-cover" alt="Kitchen" />
-             </div>
-             <div className="rounded-3xl overflow-hidden shadow-xl">
-               <img src="https://images.unsplash.com/photo-1522771739844-6a9f6d5f14af?auto=format&fit=crop&q=80&w=600" className="w-full h-full object-cover" alt="Bedroom" />
-             </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid lg:grid-cols-3 gap-12">
-        <div className="lg:col-span-2 space-y-12">
-           <section className="space-y-6">
-              <h2 className="text-3xl font-black text-surface-900 tracking-tight">About this suite</h2>
-              <p className="text-lg text-surface-500 leading-relaxed font-medium">
-                {unit.description}
-              </p>
-              <div className="flex flex-wrap gap-8 pt-4">
-                 <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-surface-50 flex items-center justify-center text-brand-600">
-                       <Bed className="w-6 h-6" />
-                    </div>
-                    <div>
-                       <div className="text-[10px] font-black text-surface-400 uppercase tracking-widest">Bedrooms</div>
-                       <div className="text-sm font-bold text-surface-900">{unit.features?.bedrooms || 1} Rooms</div>
-                    </div>
-                 </div>
-                 <div className="flex items-center gap-3">
-                    <div className="w-12 h-12 rounded-2xl bg-surface-50 flex items-center justify-center text-brand-600">
-                       <Users className="w-6 h-6" />
-                    </div>
-                    <div>
-                       <div className="text-[10px] font-black text-surface-400 uppercase tracking-widest">Capacity</div>
-                       <div className="text-sm font-bold text-surface-900">{unit.features?.guests || 2} Guests</div>
-                    </div>
-                 </div>
-              </div>
-           </section>
-
-           <section className="space-y-6">
-              <h2 className="text-2xl font-bold text-surface-900">Amenities</h2>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                 {['High-speed WiFi', 'Smart Lock', 'Full Kitchen', 'Dedicated Workspace', 'AC / Heating', 'Parking'].map(ame => (
-                    <div key={ame} className="flex items-center gap-3 text-surface-600 font-medium">
-                       <CheckCircle2 className="w-5 h-5 text-brand-500" />
-                       {ame}
-                    </div>
-                 ))}
-              </div>
-           </section>
-        </div>
-
-        {/* Booking Sidebar */}
-        <div className="relative">
-          <BaseCard padding="lg" className="sticky top-28 shadow-2xl shadow-brand-500/10 border-brand-50">
-             <div className="flex items-end gap-2 mb-8">
-                <span className="text-4xl font-black text-surface-900">${unit.base_price}</span>
-                <span className="text-surface-500 font-bold mb-1">/ night</span>
-             </div>
-
-             <form onSubmit={handleBooking} className="space-y-6">
-                <div className="space-y-4">
-                   <div className="space-y-2">
-                      <label className="text-[10px] font-black text-surface-400 uppercase tracking-widest ml-1">Check-in</label>
-                      <input 
-                        type="date" 
-                        required
-                        value={startDate}
-                        onChange={(e) => setStartDate(e.target.value)}
-                        className="input-field" 
-                      />
-                   </div>
-                   <div className="space-y-2">
-                      <label className="text-[10px] font-black text-surface-400 uppercase tracking-widest ml-1">Check-out</label>
-                      <input 
-                        type="date" 
-                        required
-                        value={endDate}
-                        onChange={(e) => setEndDate(e.target.value)}
-                        className="input-field" 
-                      />
-                   </div>
+          {specs.length > 0 && (
+            <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-card border border-crete-300 bg-crete-300 sm:grid-cols-4">
+              {specs.map((spec) => (
+                <div key={spec.label} className="bg-crete-50 px-4 py-3.5">
+                  <dt className="flex items-center gap-1.5 text-[12px] text-ink-400">
+                    <spec.icon className="h-3.5 w-3.5" strokeWidth={1.7} aria-hidden="true" />
+                    {spec.label}
+                  </dt>
+                  <dd className="num mt-1 text-[16px] font-medium text-ink-800">
+                    {spec.value}
+                  </dd>
                 </div>
+              ))}
+            </dl>
+          )}
+        </div>
 
-                <BaseButton 
-                  type="submit" 
-                  loading={bookingLoading} 
-                  className="w-full py-5 text-base shadow-xl shadow-brand-500/30"
-                >
-                   Reserve Suite
-                </BaseButton>
+        {/* Right — the booking rail */}
+        <div className="lg:sticky lg:top-20 lg:self-start">
+          <div className="rounded-card border border-crete-300 bg-crete-50 shadow-hairline">
+            <div className="flex items-baseline justify-between border-b border-crete-200 px-5 py-4">
+              <span className="num text-[26px] font-medium text-ink-900">
+                {money(unit.base_price)}
+              </span>
+              <span className="text-[13px] text-ink-400">per night</span>
+            </div>
 
-                <p className="text-[10px] text-center text-surface-400 font-bold uppercase tracking-widest pt-4">
-                  Powered by Secure Operations Engine
-                </p>
-             </form>
-          </BaseCard>
+            <div className="space-y-4 px-5 py-5">
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="Check in" htmlFor="start_date">
+                  <Input
+                    id="start_date"
+                    type="date"
+                    min={todayISO(0)}
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                  />
+                </Field>
+                <Field label="Check out" htmlFor="end_date">
+                  <Input
+                    id="end_date"
+                    type="date"
+                    min={startDate || todayISO(0)}
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                  />
+                </Field>
+              </div>
+
+              {/* Availability verdict — stated plainly, with the reason */}
+              <div
+                className={`flex items-start gap-2.5 rounded-[4px] border px-3 py-2.5 text-[13px] leading-snug ${
+                  availability === true
+                    ? "border-pine-200 bg-pine-50 text-pine-700"
+                    : availability === false
+                      ? "border-brass-200 bg-brass-50 text-brass-600"
+                      : "border-crete-300 bg-crete-100 text-ink-400"
+                }`}
+              >
+                {availability === true ? (
+                  <>
+                    <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span>
+                      Available for these dates.
+                      {nights > 0 && ` ${nights} night${nights === 1 ? "" : "s"}.`}
+                    </span>
+                  </>
+                ) : availability === false ? (
+                  <>
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span>
+                      Not available. An existing booking or the{" "}
+                      {unit.turnover_buffer_hours}h turnover buffer covers these
+                      dates — try a later check-in.
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Clock className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span>
+                      {checking
+                        ? "Checking availability…"
+                        : "Pick both dates to check availability."}
+                    </span>
+                  </>
+                )}
+              </div>
+
+              <dl className="space-y-2 border-t border-crete-200 pt-4 text-[13.5px]">
+                <div className="flex justify-between">
+                  <dt className="text-ink-400">
+                    {money(unit.base_price)} × {nights} night
+                    {nights === 1 ? "" : "s"}
+                  </dt>
+                  <dd className="num text-ink-800">{money(total, { decimals: true })}</dd>
+                </div>
+                <div className="flex justify-between border-t border-crete-200 pt-2">
+                  <dt className="font-medium text-ink-700">Estimated total</dt>
+                  <dd className="num font-medium text-pine-600">
+                    {money(total, { decimals: true })}
+                  </dd>
+                </div>
+              </dl>
+
+              <p className="text-[12px] leading-snug text-ink-400">
+                Peak-season stays (Jun–Aug) carry a 20% surge applied when the
+                booking is created. The landlord confirms before an invoice is
+                issued.
+              </p>
+
+              <Button
+                variant="primary"
+                size="lg"
+                className="w-full"
+                disabled={availability === false || nights < 1}
+                loading={booking}
+                onClick={reserve}
+              >
+                {isAuthenticated ? "Reserve this unit" : "Sign in to reserve"}
+              </Button>
+
+              <p className="flex items-center justify-center gap-1.5 text-[12px] text-ink-400">
+                <Calendar className="h-3.5 w-3.5" aria-hidden="true" />
+                Held against a {unit.turnover_buffer_hours}h turnover buffer
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <StatusTag tone="ink">unit {unit.id}</StatusTag>
+            {unit.is_active ? (
+              <StatusTag tone="pine">accepting bookings</StatusTag>
+            ) : (
+              <StatusTag tone="signal">inactive</StatusTag>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
-};
-
-export default UnitDetailView;
+}

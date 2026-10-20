@@ -1,149 +1,227 @@
 @import "tailwindcss";
 
+/* ============================================================
+   PropManage design tokens
+   Console (graphite) vs plan set (paper). One accent: brass.
+   ============================================================ */
+
 @theme {
-  --color-brand-50: #f0f4ff;
-  --color-brand-100: #e0e9fe;
-  --color-brand-200: #c1d3fe;
-  --color-brand-300: #91b1fd;
-  --color-brand-400: #5b83f9;
-  --color-brand-500: #3559f3;
-  --color-brand-600: #2565fa;
-  --color-brand-700: #1d3edb;
-  --color-brand-800: #1e33b1;
-  --color-brand-900: #1e308c;
-  --color-brand-950: #171e55;
+  --font-sans: "Archivo", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
 
-  --color-surface-50: #f8fafc;
-  --color-surface-100: #f1f5f9;
-  --color-surface-200: #e2e8f0;
-  --color-surface-300: #cbd5e1;
-  --color-surface-400: #94a3b8;
-  --color-surface-500: #64748b;
-  --color-surface-600: #475569;
-  --color-surface-700: #334155;
-  --color-surface-800: #1e293b;
-  --color-surface-900: #0f172a;
+  /* Graphite — the console */
+  --color-ink-950: #0d1116;
+  --color-ink-900: #11161c;
+  --color-ink-800: #161c22;
+  --color-ink-700: #1e262e;
+  --color-ink-600: #2a343e;
+  --color-ink-500: #3a4652;
+  --color-ink-400: #55626f;
+  --color-ink-300: #7c8996;
+  --color-ink-200: #aab4be;
 
-  --radius-4xl: 2rem;
-  --radius-5xl: 2.5rem;
+  /* Concrete — the workspace */
+  --color-crete-50: #fafaf8;
+  --color-crete-100: #f2f2ef;
+  --color-crete-200: #e7e7e2;
+  --color-crete-300: #d8d8d1;
+  --color-crete-400: #c2c2b8;
 
-  --animate-fade-in: fadeIn 0.5s ease-out;
+  /* Pine — brand / confirmed */
+  --color-pine-50: #e6f0ed;
+  --color-pine-100: #c9e0da;
+  --color-pine-200: #97c4b8;
+  --color-pine-400: #2e8570;
+  --color-pine-500: #0e6b58;
+  --color-pine-600: #0a5344;
+  --color-pine-700: #073c31;
 
-  @keyframes fadeIn {
-    0% { opacity: 0; transform: translateY(10px); }
-    100% { opacity: 1; transform: translateY(0); }
+  /* Brass — the single accent */
+  --color-brass-50: #faf1e4;
+  --color-brass-100: #f3e0c4;
+  --color-brass-200: #e3c391;
+  --color-brass-400: #d19a55;
+  --color-brass-500: #be7b2a;
+  --color-brass-600: #9d6220;
+
+  /* Signal — status only */
+  --color-signal-50: #fbe9e7;
+  --color-signal-100: #f6cdc7;
+  --color-signal-500: #c0392b;
+  --color-signal-600: #9d2c20;
+
+  --color-amber-50: #fdf3e0;
+  --color-amber-100: #f8e3b8;
+  --color-amber-500: #b8801a;
+  --color-amber-600: #966611;
+
+  --radius-card: 6px;
+  --shadow-hairline: 0 1px 0 0 rgb(17 22 28 / 0.04);
+  --shadow-lift: 0 2px 10px -2px rgb(17 22 28 / 0.16);
+
+  --animate-rise: rise 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  --animate-fade: fade 0.28s ease both;
+  --animate-sweep: sweep 1.4s ease-in-out infinite;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
-:root {
-  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
-body {
-  margin: 0;
-  padding: 0;
-  background-color: var(--color-surface-50);
-  color: var(--color-surface-900);
+@keyframes sweep {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 0.9;
+  }
 }
 
-/* Base Utility Classes using CSS Variables */
-.input-field {
-  width: 100%;
-  padding: 0.875rem 1.25rem;
-  background-color: white;
-  border: 1px solid var(--color-surface-200);
-  border-radius: 1rem;
-  outline: none;
-  transition: all 0.2s;
-  font-size: 0.875rem;
-  font-weight: 500;
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+
+  html {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-crete-100);
+    color: var(--color-ink-800);
+    font-family: var(--font-sans);
+    font-size: 15px;
+    line-height: 1.55;
+    font-variation-settings: "wdth" 100;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-variation-settings: "wdth" 112;
+    letter-spacing: -0.018em;
+    line-height: 1.12;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background: var(--color-brass-100);
+    color: var(--color-ink-900);
+  }
+
+  *:focus-visible {
+    outline: 2px solid var(--color-brass-500);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /* Console scrollbars */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-ink-600);
+    border-radius: 999px;
+    border: 3px solid var(--color-crete-100);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--color-ink-500);
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+  }
 }
 
-.input-field:focus {
-  border-color: var(--color-brand-500);
-  box-shadow: 0 0 0 4px rgba(53, 89, 243, 0.1);
+@layer components {
+  /* Numeric data — always tabular so columns line up */
+  .num {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+
+  /* Expanded display type — the signature typographic move */
+  .display {
+    font-variation-settings: "wdth" 118;
+    letter-spacing: -0.028em;
+    line-height: 1.04;
+  }
+
+  /* Form controls */
+  .field {
+    width: 100%;
+    background: var(--color-crete-50);
+    border: 1px solid var(--color-crete-300);
+    border-radius: 4px;
+    padding: 0.55rem 0.7rem;
+    color: var(--color-ink-800);
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .field::placeholder {
+    color: var(--color-ink-300);
+  }
+  .field:hover:not(:disabled) {
+    border-color: var(--color-crete-400);
+  }
+  .field:focus {
+    outline: none;
+    border-color: var(--color-brass-500);
+    box-shadow: 0 0 0 3px rgb(190 123 42 / 0.14);
+  }
+  .field:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+  }
+
+  /* Plan-set hatch, used behind empty states and the console rail */
+  .plan-hatch {
+    background-image: linear-gradient(
+      135deg,
+      rgb(255 255 255 / 0.035) 25%,
+      transparent 25%,
+      transparent 50%,
+      rgb(255 255 255 / 0.035) 50%,
+      rgb(255 255 255 / 0.035) 75%,
+      transparent 75%
+    );
+    background-size: 14px 14px;
+  }
 }
 
-.input-field::placeholder {
-  color: var(--color-surface-400);
-}
-
-.btn-primary {
-  padding: 0.875rem 1.5rem;
-  background-color: var(--color-brand-600);
-  color: white;
-  font-weight: 700;
-  border-radius: 1rem;
-  box-shadow: 0 10px 15px -3px rgba(37, 101, 250, 0.2);
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  border: none;
-  cursor: pointer;
-}
-
-.btn-primary:hover {
-  background-color: var(--color-brand-700);
-  box-shadow: 0 20px 25px -5px rgba(37, 101, 250, 0.3);
-}
-
-.btn-primary:active {
-  transform: scale(0.95);
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  pointer-events: none;
-}
-
-.btn-secondary {
-  padding: 0.875rem 1.5rem;
-  background-color: white;
-  color: var(--color-surface-900);
-  font-weight: 700;
-  border-radius: 1rem;
-  border: 1px solid var(--color-surface-200);
-  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  cursor: pointer;
-}
-
-.btn-secondary:hover {
-  background-color: var(--color-surface-50);
-  border-color: var(--color-surface-300);
-}
-
-.btn-secondary:active {
-  transform: scale(0.95);
-}
-
-.btn-ghost {
-  padding: 0.875rem 1.5rem;
-  color: var(--color-surface-600);
-  font-weight: 700;
-  border-radius: 1rem;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-}
-
-.btn-ghost:hover {
-  background-color: var(--color-surface-100);
-}
-
-.btn-ghost:active {
-  transform: scale(0.95);
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

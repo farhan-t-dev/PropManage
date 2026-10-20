@@ -1,271 +1,564 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import api from '../api';
-import { useAuthStore } from '../store/authStore';
-import { useNotificationStore } from '../store/notificationStore';
-import { Line } from 'react-chartjs-2';
-import { 
-  TrendingUp, Users, Wrench, Plus, Download, MoreVertical, 
-  ArrowUpRight, Calendar, DollarSign, Home as HomeIcon
-} from 'lucide-react';
-import { BaseButton } from '../components/BaseButton';
-import { BaseCard } from '../components/BaseCard';
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
-  Chart as ChartJS,
+  BarElement,
   CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
+  Chart as ChartJS,
   Legend,
-  Filler
-} from 'chart.js';
+  LinearScale,
+  Tooltip,
+} from "chart.js";
+import { Bar } from "react-chartjs-2";
+import {
+  Building2,
+  CheckCircle2,
+  Download,
+  Plus,
+  Wallet,
+  Wrench,
+} from "lucide-react";
+import api, { apiUrl } from "../api";
+import { formatDateShort, listOf, money, moneyCompact } from "../lib/format";
+import { BOOKING_TONES, statusLabel } from "../lib/status";
+import { useAuthStore } from "../store/authStore";
+import { useNotificationStore } from "../store/notificationStore";
+import Button from "../components/ui/Button";
+import EmptyState from "../components/ui/EmptyState";
+import Panel from "../components/ui/Panel";
+import StatStrip from "../components/ui/StatStrip";
+import { SkeletonPanel } from "../components/ui/Skeleton";
+import StatusTag from "../components/ui/StatusTag";
 
 ChartJS.register(
   CategoryScale,
   LinearScale,
-  PointElement,
-  LineElement,
-  Title,
+  BarElement,
   Tooltip,
   Legend,
-  Filler
 );
 
-import DocumentVault from '../components/DocumentVault';
+const INK = "#55626f";
+const HAIRLINE = "#e7e7e2";
 
-const LandlordDashboard = () => {
+export default function LandlordDashboard() {
   const { user } = useAuthStore();
-  const { showNotification } = useNotificationStore();
+  const showNotification = useNotificationStore((s) => s.showNotification);
+
   const [bookings, setBookings] = useState([]);
   const [units, setUnits] = useState([]);
-  const [maintenanceCount, setMaintenanceCount] = useState(0);
-  const [revenueData, setRevenueData] = useState([]);
+  const [revenue, setRevenue] = useState([]);
+  const [ledger, setLedger] = useState(null);
+  const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [processingId, setProcessingId] = useState(null);
+  const [confirmingId, setConfirmingId] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      try {
-        const [bookingsRes, unitsRes, revRes, maintRes] = await Promise.all([
-          api.get('/bookings/my_properties_bookings/'),
-          api.get('/units/'),
-          api.get('/bookings/monthly_revenue/'),
-          api.get('/maintenance/requests/')
-        ]);
-        
-        setBookings(Array.isArray(bookingsRes.data) ? bookingsRes.data : bookingsRes.data.results || []);
-        setUnits(Array.isArray(unitsRes.data) ? unitsRes.data : unitsRes.data.results || []);
-        setRevenueData(Array.isArray(revRes.data) ? revRes.data : []);
-        
-        const maintData = Array.isArray(maintRes.data) ? maintRes.data : maintRes.data.results || [];
-        setMaintenanceCount(maintData.filter(r => r.status !== 'resolved').length);
-      } catch (err) {
-        console.error('Dashboard Fetch Error:', err);
-        showNotification('Failed to load dashboard data', 'error');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
+  const load = useCallback(async () => {
+    setLoading(true);
+    const [b, u, r, l, m] = await Promise.allSettled([
+      api.get("/bookings/my_properties_bookings/"),
+      api.get("/units/"),
+      api.get("/bookings/monthly_revenue/"),
+      api.get("/billing/invoices/landlord_ledger/"),
+      api.get("/maintenance/requests/"),
+    ]);
+    setBookings(b.status === "fulfilled" ? listOf(b.value.data) : []);
+    setUnits(u.status === "fulfilled" ? listOf(u.value.data) : []);
+    setRevenue(r.status === "fulfilled" ? r.value.data : []);
+    setLedger(l.status === "fulfilled" ? l.value.data : null);
+    setTickets(m.status === "fulfilled" ? listOf(m.value.data) : []);
+    setLoading(false);
   }, []);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
   const stats = useMemo(() => {
-    const totalEarned = (revenueData || []).reduce((acc, curr) => acc + parseFloat(curr.revenue || 0), 0);
-    const occupancy = units.length > 0 
-      ? Math.round((bookings.filter(b => b.status === 'confirmed').length / units.length) * 100) 
+    // Occupancy counts units that are currently confirmed OR have hosted a
+    // completed stay — the seeded ledger is all historical bookings, so only
+    // counting "confirmed" would misleadingly report 0% for a full portfolio.
+    const occupiedUnitIds = new Set(
+      bookings
+        .filter((b) => b.status === "confirmed" || b.status === "completed")
+        .map((b) => b.unit_details?.id ?? b.unit),
+    );
+    const occupancy = units.length
+      ? Math.round((occupiedUnitIds.size / units.length) * 100)
       : 0;
-    return { totalEarned, occupancy, pendingTickets: maintenanceCount };
-  }, [revenueData, units, bookings, maintenanceCount]);
+    const openTickets = tickets.filter(
+      (t) => t.status === "pending" || t.status === "in_progress",
+    ).length;
+    const pending = bookings.filter((b) => b.status === "pending").length;
 
-  const chartData = {
-    labels: revenueData.length > 0 ? revenueData.map(d => d.label) : ['No Data'],
-    datasets: [{
-      label: 'Revenue',
-      data: revenueData.length > 0 ? revenueData.map(d => d.revenue) : [0],
-      borderColor: '#2565fa',
-      borderWidth: 3,
-      backgroundColor: 'rgba(37, 101, 250, 0.1)',
-      fill: true,
-      tension: 0.4,
-      pointRadius: 0,
-      pointHoverRadius: 6,
-    }]
-  };
+    return [
+      {
+        label: "Ledger balance",
+        value: money(ledger?.balance ?? 0, { decimals: true }),
+        note: "net payouts recorded",
+        tone: "pine",
+      },
+      {
+        label: "Occupancy",
+        value: `${occupancy}%`,
+        note: `${occupiedUnitIds.size} of ${units.length} units booked`,
+        tone: occupancy >= 50 ? "pine" : "brass",
+      },
+      {
+        label: "Awaiting confirmation",
+        value: pending,
+        note: pending > 0 ? "review below" : "nothing pending",
+        tone: pending > 0 ? "brass" : "ink",
+      },
+      {
+        label: "Open tickets",
+        value: openTickets,
+        note: openTickets > 0 ? "action required" : "all clear",
+        tone: openTickets > 0 ? "signal" : "ink",
+      },
+    ];
+  }, [bookings, units, ledger, tickets]);
 
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: { legend: { display: false } },
-    scales: {
-      y: { grid: { color: '#f1f5f9' }, ticks: { callback: (v) => '$' + v }, beginAtZero: true },
-      x: { grid: { display: false } }
-    }
-  };
-
-  const confirmBooking = async (id) => {
-    setProcessingId(id);
+  async function confirmBooking(id) {
+    setConfirmingId(id);
     try {
       await api.post(`/bookings/${id}/confirm/`);
-      showNotification('Booking confirmed!', 'success');
-      const res = await api.get('/bookings/my_properties_bookings/');
-      setBookings(Array.isArray(res.data) ? res.data : res.data.results || []);
+      showNotification(
+        "Booking confirmed. An invoice has been queued for generation.",
+        "success",
+      );
+      await load();
     } catch (err) {
-      showNotification('Action failed', 'error');
+      const msg =
+        err?.response?.data?.detail ||
+        "This booking could not be confirmed from its current status.";
+      showNotification(msg, "error");
+      await load();
     } finally {
-      setProcessingId(null);
+      setConfirmingId(null);
     }
-  };
+  }
+
+  async function exportCsv() {
+    setExporting(true);
+    try {
+      const res = await api.get("/bookings/download_bookings_csv/", {
+        responseType: "blob",
+        skipAuthReset: true,
+      });
+      const url = URL.createObjectURL(res.data);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "bookings_report.csv";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      showNotification("Bookings report exported.", "success");
+    } catch (err) {
+      // Fall back to a plain link if the browser blocks the programmatic download.
+      if (err?.config?.responseType === "blob") {
+        window.open(apiUrl("/bookings/download_bookings_csv/"), "_blank");
+      } else {
+        showNotification("Export failed.", "error");
+      }
+    } finally {
+      setExporting(false);
+    }
+  }
+
+  const recent = useMemo(
+    () =>
+      [...bookings]
+        .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+        .slice(0, 6),
+    [bookings],
+  );
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <SkeletonPanel rows={4} />
+        <SkeletonPanel rows={3} />
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-8 pb-10 animate-fade-in">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-4xl font-black text-surface-900 tracking-tight mb-2">Portfolio Overview</h1>
-          <p className="text-surface-500 font-medium flex items-center gap-2">
-            <Calendar className="w-4 h-4" />
-            Real-time metrics for {new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}
+          <h2 className="display text-[28px] font-semibold text-ink-900">
+            Portfolio overview
+          </h2>
+          <p className="mt-1 text-[14px] text-ink-400">
+            {user?.first_name ? `${user.first_name}, y` : "Y"}our ledger,
+            occupancy and reservations at a glance.
           </p>
         </div>
-        <div className="flex items-center gap-3">
-          <BaseButton variant="secondary" icon={Download}>Export</BaseButton>
-          <BaseButton icon={Plus}>New Property</BaseButton>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary" onClick={exportCsv} loading={exporting}>
+            <Download className="h-4 w-4" aria-hidden="true" />
+            Export CSV
+          </Button>
+          <Link to="/landlord-dashboard/create-property">
+            <Button>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              New property
+            </Button>
+          </Link>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         <BaseCard padding="lg" hover className="relative overflow-hidden group">
-            <div className="flex justify-between items-start mb-4">
-               <div className="w-12 h-12 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center">
-                  <DollarSign className="w-6 h-6" />
-               </div>
-               <div className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg text-xs font-bold">
-                  <ArrowUpRight className="w-3 h-3" /> 12%
-               </div>
-            </div>
-            <div className="text-sm font-bold text-surface-400 uppercase tracking-widest mb-1">Total Revenue</div>
-            <div className="text-3xl font-black text-surface-900">${stats.totalEarned.toLocaleString()}</div>
-         </BaseCard>
+      <StatStrip stats={stats} />
 
-         <BaseCard padding="lg" hover className="relative overflow-hidden group">
-            <div className="flex justify-between items-start mb-4">
-               <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-                  <TrendingUp className="w-6 h-6" />
-               </div>
-               <div className="flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg text-xs font-bold">
-                  <ArrowUpRight className="w-3 h-3" /> 4%
-               </div>
+      <div className="grid gap-6 lg:grid-cols-[1.6fr_1fr]">
+        {/* Revenue chart */}
+        <Panel
+          title="Monthly revenue"
+          subtitle="Settled invoices, by stay month"
+          action={
+            revenue.length > 0 && (
+              <span className="flex items-center gap-3 text-[12px] text-ink-400">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-[1px] bg-brass-500" aria-hidden="true" />
+                  latest
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="h-2 w-2 rounded-[1px] bg-pine-500" aria-hidden="true" />
+                  prior
+                </span>
+              </span>
+            )
+          }
+        >
+          {revenue.length === 0 ? (
+            <EmptyState
+              icon={Wallet}
+              title="No settled revenue yet"
+              description="Revenue appears here once you confirm a booking and the resident pays the invoice."
+              compact
+            />
+          ) : (
+            <div className="h-64">
+              <Bar
+                data={{
+                  labels: revenue.map((r) => r.label),
+                  datasets: [
+                    {
+                      label: "Revenue",
+                      data: revenue.map((r) => Number(r.revenue) || 0),
+                      backgroundColor: revenue.map((r, i) =>
+                        // Brass marks the most recent month — the figure that
+                        // needs attention. Tied values no longer flood brass.
+                        i === revenue.length - 1 ? "#be7b2a" : "#0e6b58",
+                      ),
+                      hoverBackgroundColor: "#0a5344",
+                      borderRadius: 2,
+                      maxBarSize: 44,
+                    },
+                  ],
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                      backgroundColor: "#161c22",
+                      titleColor: "#aab4be",
+                      bodyColor: "#fafaf8",
+                      titleFont: { family: "Archivo", size: 12 },
+                      bodyFont: {
+                        family: "IBM Plex Mono",
+                        size: 13,
+                        weight: "500",
+                      },
+                      padding: 10,
+                      cornerRadius: 4,
+                      displayColors: false,
+                      callbacks: {
+                        label: (ctx) => money(ctx.parsed.y, { decimals: true }),
+                      },
+                    },
+                  },
+                  scales: {
+                    x: {
+                      grid: { display: false },
+                      border: { color: HAIRLINE },
+                      ticks: {
+                        color: INK,
+                        font: { family: "IBM Plex Mono", size: 11 },
+                        maxRotation: 0,
+                        autoSkipPadding: 12,
+                      },
+                    },
+                    y: {
+                      grid: { color: HAIRLINE },
+                      border: { display: false },
+                      ticks: {
+                        color: INK,
+                        font: { family: "IBM Plex Mono", size: 11 },
+                        callback: (value) => moneyCompact(value),
+                        maxTicksLimit: 5,
+                      },
+                    },
+                  },
+                }}
+              />
             </div>
-            <div className="text-sm font-bold text-surface-400 uppercase tracking-widest mb-1">Portfolio Occupancy</div>
-            <div className="text-3xl font-black text-surface-900">{stats.occupancy}%</div>
-         </BaseCard>
+          )}
+        </Panel>
 
-         <BaseCard padding="lg" hover className="relative overflow-hidden group">
-            <div className="flex justify-between items-start mb-4">
-               <div className="w-12 h-12 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center">
-                  <Wrench className="w-6 h-6" />
-               </div>
-               {stats.pendingTickets > 0 && <div className="text-rose-600 bg-rose-50 px-2 py-1 rounded-lg text-xs font-bold">Action Required</div>}
-            </div>
-            <div className="text-sm font-bold text-surface-400 uppercase tracking-widest mb-1">Active Tickets</div>
-            <div className={`text-3xl font-black ${stats.pendingTickets > 0 ? 'text-rose-600' : 'text-surface-900'}`}>{stats.pendingTickets}</div>
-         </BaseCard>
+        {/* Ledger */}
+        <Panel
+          title="Payout ledger"
+          subtitle="Recent transactions"
+          padding="p-0"
+        >
+          {!ledger?.recent_transactions?.length ? (
+            <EmptyState
+              icon={Wallet}
+              title="Ledger is empty"
+              description="Payouts post here the moment a resident settles an invoice."
+              compact
+            />
+          ) : (
+            <>
+              <div className="border-b border-crete-200 px-5 py-4">
+                <p className="text-[12px] text-ink-400">Balance</p>
+                <p className="num mt-0.5 text-[26px] font-medium text-pine-600">
+                  {money(ledger.balance, { decimals: true })}
+                </p>
+              </div>
+              <ul className="max-h-72 divide-y divide-crete-200 overflow-y-auto">
+                {ledger.recent_transactions.map((txn) => (
+                  <li
+                    key={txn.id}
+                    className="flex items-center justify-between gap-3 px-5 py-3"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-[13.5px] text-ink-700">
+                        {txn.description || "Transaction"}
+                      </p>
+                      <p className="num text-[11.5px] text-ink-300">
+                        {formatDateShort(txn.created_at)} ·{" "}
+                        {txn.transaction_type}
+                      </p>
+                    </div>
+                    <span
+                      className={`num shrink-0 text-[13.5px] font-medium ${
+                        txn.transaction_type === "payout"
+                          ? "text-pine-600"
+                          : txn.transaction_type === "payment"
+                            ? "text-ink-800"
+                            : "text-brass-600"
+                      }`}
+                    >
+                      {txn.transaction_type === "payout" ? "+" : ""}
+                      {money(txn.amount, { decimals: true })}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+        </Panel>
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-8">
-         <BaseCard className="lg:col-span-2" padding="lg">
-            <h3 className="text-xl font-bold text-surface-900 mb-8">Revenue Trends</h3>
-            <div className="h-80 relative">
-               {loading ? (
-                 <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="w-10 h-10 border-4 border-brand-100 border-t-brand-600 rounded-full animate-spin" />
-                 </div>
-               ) : (
-                 <Line data={chartData} options={chartOptions} />
-               )}
-            </div>
-         </BaseCard>
-         
-         <BaseCard padding="none" className="flex flex-col">
-            <div className="p-8 border-b border-surface-100">
-               <h3 className="text-xl font-bold text-surface-900">Recent Units</h3>
-            </div>
-            <div className="flex-1 overflow-y-auto max-h-[400px]">
-               {units.slice(0, 5).map(unit => (
-                  <div key={unit.id} className="p-6 flex items-center gap-4 hover:bg-surface-50 border-b border-surface-50 last:border-0">
-                     <div className="w-12 h-12 rounded-xl bg-surface-100 flex items-center justify-center text-brand-600">
-                        <HomeIcon className="w-6 h-6" />
-                     </div>
-                     <div className="flex-1 min-w-0">
-                        <div className="text-sm font-bold text-surface-900 truncate">{unit.title}</div>
-                        <div className="text-xs text-surface-500">{unit.unit_number}</div>
-                     </div>
-                     <div className="text-right">
-                        <div className="text-sm font-black text-surface-900">${unit.base_price}</div>
-                     </div>
-                  </div>
-               ))}
-            </div>
-         </BaseCard>
-
-         <DocumentVault />
-      </div>
-
-      <BaseCard padding="none" className="overflow-hidden">
-         <div className="p-8 border-b border-surface-100 flex items-center justify-between">
-            <h3 className="text-xl font-bold text-surface-900">Upcoming Reservations</h3>
-         </div>
-         <div className="overflow-x-auto">
-            <table className="w-full text-left">
-               <thead>
-                  <tr className="bg-surface-50/50">
-                     <th className="px-8 py-4 text-[10px] font-black text-surface-400 uppercase tracking-widest">Unit</th>
-                     <th className="px-8 py-4 text-[10px] font-black text-surface-400 uppercase tracking-widest">Guest</th>
-                     <th className="px-8 py-4 text-[10px] font-black text-surface-400 uppercase tracking-widest">Status</th>
-                     <th className="px-8 py-4 text-[10px] font-black text-surface-400 uppercase tracking-widest text-right">Actions</th>
+      {/* Reservations */}
+      <Panel
+        title="Reservations"
+        subtitle="Confirm incoming stays to mint their invoices"
+        padding="p-0"
+        action={
+          <span className="num text-[12.5px] text-ink-400">
+            {bookings.length} total
+          </span>
+        }
+      >
+        {recent.length === 0 ? (
+          <EmptyState
+            icon={Building2}
+            title="No reservations yet"
+            description="Once a resident books one of your units, it arrives here for confirmation."
+            compact
+          />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[46rem] text-left">
+              <thead>
+                <tr className="border-b border-crete-200 text-[12px] text-ink-400">
+                  <th className="px-5 py-2.5 font-medium">Unit</th>
+                  <th className="px-5 py-2.5 font-medium">Resident</th>
+                  <th className="px-5 py-2.5 font-medium">Stay</th>
+                  <th className="px-5 py-2.5 text-right font-medium">Total</th>
+                  <th className="px-5 py-2.5 font-medium">Status</th>
+                  <th className="px-5 py-2.5 text-right font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-crete-200">
+                {recent.map((booking) => (
+                  <tr
+                    key={booking.id}
+                    className="transition-colors hover:bg-crete-100"
+                  >
+                    <td className="px-5 py-3">
+                      <p className="text-[13.5px] font-medium text-ink-800">
+                        {booking.unit_details?.title || "Unit"}
+                      </p>
+                      <p className="num text-[12px] text-ink-400">
+                        {booking.unit_details?.property_title} ·{" "}
+                        {booking.unit_details?.unit_number}
+                      </p>
+                    </td>
+                    <td className="px-5 py-3 text-[13.5px] text-ink-600">
+                      {booking.tenant_details?.username || "—"}
+                    </td>
+                    <td className="num px-5 py-3 text-[12.5px] text-ink-500">
+                      {formatDateShort(booking.start_date)} →{" "}
+                      {formatDateShort(booking.end_date)}
+                    </td>
+                    <td className="num px-5 py-3 text-right text-[13.5px] font-medium text-ink-800">
+                      {money(booking.total_price, { decimals: true })}
+                    </td>
+                    <td className="px-5 py-3">
+                      <StatusTag tone={BOOKING_TONES[booking.status] || "ink"}>
+                        {statusLabel(booking.status)}
+                      </StatusTag>
+                    </td>
+                    <td className="px-5 py-3 text-right">
+                      {booking.status === "pending" ? (
+                        <Button
+                          size="sm"
+                          loading={confirmingId === booking.id}
+                          onClick={() => confirmBooking(booking.id)}
+                        >
+                          <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                          Confirm
+                        </Button>
+                      ) : (
+                        <span className="text-[12.5px] text-ink-300">
+                          {booking.invoice?.status
+                            ? `invoice ${booking.invoice.status}`
+                            : "—"}
+                        </span>
+                      )}
+                    </td>
                   </tr>
-               </thead>
-               <tbody className="divide-y divide-surface-100">
-                  {bookings.length > 0 ? bookings.map(b => (
-                     <tr key={b.id} className="hover:bg-surface-50/50 group transition-colors">
-                        <td className="px-8 py-6">
-                           <div className="text-sm font-bold text-surface-900">{b.unit_details?.title || 'Unknown Unit'}</div>
-                           <div className="text-[10px] text-surface-400 font-bold uppercase">{b.unit_details?.unit_number || 'N/A'}</div>
-                        </td>
-                        <td className="px-8 py-6 text-sm text-surface-700 font-semibold">{b.tenant_details?.username || 'Unknown Guest'}</td>
-                        <td className="px-8 py-6">
-                           <span className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border ${
-                             b.status === 'confirmed' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-amber-50 text-amber-700 border-amber-100'
-                           }`}>{b.status}</span>
-                        </td>
-                        <td className="px-8 py-6 text-right">
-                           {b.status === 'pending' && (
-                             <BaseButton 
-                                size="sm" 
-                                loading={processingId === b.id} 
-                                onClick={() => confirmBooking(b.id)}
-                             >
-                                Confirm
-                             </BaseButton>
-                           )}
-                        </td>
-                     </tr>
-                  )) : (
-                    <tr>
-                      <td colSpan="4" className="px-8 py-20 text-center">
-                        <div className="flex flex-col items-center">
-                          <Calendar className="w-12 h-12 text-surface-200 mb-4" />
-                          <p className="text-surface-500 font-medium">No reservations found.</p>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-               </tbody>
+                ))}
+              </tbody>
             </table>
-         </div>
-      </BaseCard>
+          </div>
+        )}
+      </Panel>
+
+      {/* Units + tickets */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Panel
+          title="Inventory"
+          subtitle={`${units.length} unit${units.length === 1 ? "" : "s"} registered`}
+          padding="p-0"
+          action={
+            <Link to="/discover">
+              <Button variant="ghost" size="sm">
+                View all
+              </Button>
+            </Link>
+          }
+        >
+          {units.length === 0 ? (
+            <EmptyState
+              icon={Building2}
+              title="No units yet"
+              description="Register a property, then add its first unit to start taking bookings."
+              compact
+              action={
+                <Link to="/landlord-dashboard/create-property">
+                  <Button variant="secondary" size="sm">
+                    <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+                    Register property
+                  </Button>
+                </Link>
+              }
+            />
+          ) : (
+            <ul className="divide-y divide-crete-200">
+              {units.slice(0, 6).map((unit) => (
+                <li key={unit.id}>
+                  <Link
+                    to={`/unit/${unit.id}`}
+                    className="flex items-center justify-between gap-3 px-5 py-3 transition-colors hover:bg-crete-100"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-[13.5px] font-medium text-ink-800">
+                        {unit.title}
+                      </p>
+                      <p className="truncate text-[12px] text-ink-400">
+                        {unit.property_title} · {unit.unit_number}
+                      </p>
+                    </div>
+                    <span className="num shrink-0 text-[13.5px] text-ink-700">
+                      {money(unit.base_price)}
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+
+        <Panel
+          title="Maintenance queue"
+          subtitle="Tickets raised against your properties"
+          padding="p-0"
+          action={
+            <Link to="/maintenance">
+              <Button variant="ghost" size="sm">
+                Open desk
+              </Button>
+            </Link>
+          }
+        >
+          {tickets.length === 0 ? (
+            <EmptyState
+              icon={Wrench}
+              title="No tickets"
+              description="Resident-raised faults land here and push a websocket notification."
+              compact
+            />
+          ) : (
+            <ul className="divide-y divide-crete-200">
+              {tickets.slice(0, 6).map((ticket) => (
+                <li key={ticket.id} className="px-5 py-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="truncate text-[13.5px] font-medium text-ink-800">
+                        {ticket.title}
+                      </p>
+                      <p className="num text-[12px] text-ink-300">
+                        #{ticket.id} · {ticket.priority} ·{" "}
+                        {formatDateShort(ticket.created_at)}
+                      </p>
+                    </div>
+                    <StatusTag
+                      tone={
+                        ticket.priority === "emergency" || ticket.priority === "high"
+                          ? "signal"
+                          : ticket.status === "resolved"
+                            ? "pine"
+                            : "brass"
+                      }
+                    >
+                      {statusLabel(ticket.status)}
+                    </StatusTag>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
+      </div>
     </div>
   );
-};
-
-export default LandlordDashboard;
+}
