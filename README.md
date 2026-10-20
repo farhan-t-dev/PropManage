@@ -1,14 +1,14 @@
 # PropManage — Property Operations Engine
 
-A full-stack property management platform: nested inventory, an append-only
-financial ledger, PDF document generation, and a maintenance workflow enforced
-by a finite state machine — with realtime push over WebSockets.
+A full-stack property management platform: nested inventory, a financial
+ledger, PDF document generation, and a maintenance workflow driven by a finite
+state machine, with push updates over WebSockets.
 
-**What makes it worth reading:** the backend's money paths are transactional,
-the state machine refuses illegal transitions *and* illegal exits (resolution
-demands a cost), auth is cookie-based JWT with no token in `localStorage`, and
-the frontend draws every unit's floor plan procedurally instead of shipping
-stock photography.
+A few implementation details worth knowing before you read further: booking
+writes run inside a database transaction with a row lock on the unit, the
+maintenance state machine will not resolve a ticket until a cost is recorded,
+the JWT lives only in an HttpOnly cookie, and the frontend draws each unit's
+floor plan procedurally instead of using stock photography.
 
 ---
 
@@ -34,35 +34,38 @@ and 24 ledger transactions.
 
 ## Highlights
 
-### Financial ledger with atomic integrity
-Bookings, invoices, payments, refunds, fees and payouts are one subsystem, not
-four loosely-coupled models. Booking creation runs inside
-`transaction.atomic()` with `select_for_update()` on the unit, so a double
-book can't slip through two concurrent requests. Ledger entries are append-only
-— corrections are new rows, never edits. Confirmed bookings queue a Celery task
-that renders a branded PDF invoice (WeasyPrint) into the document vault.
+### Transactional booking and ledger writes
+Bookings, invoices, payments, refunds, fees and payouts share one subsystem
+rather than four loosely-coupled models. `create_booking()` runs under
+`@transaction.atomic()` with `select_for_update()` on the unit row, so two
+concurrent requests cannot both pass the same availability check. Ledger rows
+have no edit or delete endpoint — the only code that removes them is the demo
+seed command resetting data. Confirmed bookings queue a Celery task that
+renders a PDF invoice (WeasyPrint) into the document vault.
 
-### Operations state machine
-Maintenance tickets move `pending → in_progress → resolved` via `django-fsm`.
-The machine rejects both kinds of mistake: starting a ticket that isn't
-pending, and resolving one without a cost. Every closed ticket therefore
-carries a number on the ledger.
+### Maintenance workflow as a state machine
+Tickets move `pending → in_progress → resolved` via `django-fsm`. django-fsm
+raises on any transition outside its declared sources, and `resolve` carries a
+condition requiring `cost > 0`, so a ticket cannot close without a recorded
+cost.
 
-### Security posture
-JWT lives in an **HttpOnly cookie** — never `localStorage`, so XSS can't read
-it. Refresh is silent on the server. RBAC is enforced per-object, not just per
-route: a landlord can only mutate their own properties, a resident only sees
-their own bookings and tickets. Role-scoped querysets back it up, so
-unauthorized objects return 404 rather than leaking existence.
+### Authentication and access control
+The JWT is stored in an **HttpOnly cookie**, so client-side script cannot read
+it; `localStorage` holds only the user profile object for the first render,
+never credentials. Token refresh is a server call that issues a new cookie.
+Access control is per-object rather than per-route only: `IsOwnerOrReadOnly`
+keeps landlords on their own properties, and the booking, invoice and
+maintenance querysets are filtered by role — an object outside that scope
+isn't in the queryset, so the request returns 404.
 
 ### Realtime
 Django Channels over a WebSocket at `/ws/notifications/`, authenticated from
 the same JWT cookie. Booking confirmations, ticket state changes and invoice
-events push to the connected client instantly. The client reconnects with
-backoff and keeps a rolling activity history behind the header bell.
+events push to the connected client as soon as they happen. The client
+reconnects with backoff and keeps a rolling activity history behind the
+header bell.
 
-### Role-based product surface
-Two genuinely different products behind one login:
+### Two role-scoped views behind one login
 
 - **Landlord** — portfolio dashboard (occupancy, monthly revenue chart,
   payout ledger), booking confirmation that mints invoices, ticket queue with
@@ -93,7 +96,7 @@ brass swing arcs, plus a north arrow and scale bar. Unit 3 always draws the
 same plan, and no two units share one. This replaces all photography — there
 are no images to license and nothing to break offline.
 
-Everything else follows from the same rules:
+The rest of the UI follows the same conventions:
 
 - **Stat strips** are one panel divided by hairlines, never three identical cards.
 - **Status colours are semantic**: pine = settled, brass = needs you, signal = blocked, ink = inert.
@@ -161,8 +164,9 @@ Services: `db`, `redis`, `backend`, `celery_worker`, `frontend` (Nginx),
 
 ## API
 
-Mounted at `/api/v1/`. Interactive OpenAPI schema at **`/api/schema/docs/`**
-once the backend is running. Roughly:
+Mounted at `/api/v1/`. Interactive OpenAPI (Swagger) UI at **`/api/docs/`**, raw
+schema at `/api/schema/`, ReDoc at `/api/redoc/` — all live once the backend
+is running. Roughly:
 
 ```
 POST   /auth/token/                     # sets HttpOnly access + refresh cookies
