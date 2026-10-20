@@ -51,3 +51,8 @@
    docker-compose exec backend python manage.py seed_data
    ```
 4. **Access UI:** `http://localhost:5173`
+
+## Deployment (Render)
+Infrastructure is defined in [`render.yaml`](./render.yaml); step-by-step
+instructions, architecture notes, and free-tier caveats are in
+**[DEPLOY.md](./DEPLOY.md)**.

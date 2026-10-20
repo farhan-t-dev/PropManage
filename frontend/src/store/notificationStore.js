@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { wsUrl } from '../api';
 
 export const useNotificationStore = create((set, get) => ({
   message: null,
@@ -29,8 +30,7 @@ export const useNotificationStore = create((set, get) => ({
     const { socket } = get();
     if (socket) return;
 
-    const wsUrl = 'ws://localhost:8000/ws/notifications/';
-    const newSocket = new WebSocket(wsUrl);
+    const newSocket = new WebSocket(wsUrl());
 
     newSocket.onopen = () => {
       set({ isConnected: true });

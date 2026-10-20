@@ -1,0 +1,133 @@
+# Render Blueprint for PropManage
+#
+# Architecture (all resources in the default oregon region, free tier):
+#
+#   propmanage-frontend  Static site  - React/Vite build, CDN, SPA rewrite
+#   propmanage-api       Web service  - Django + daphne (ASGI) + Celery worker
+#                                        in one container (free tier has no
+#                                        standalone worker plan), Docker runtime
+#   propmanage-db        Postgres     - free plan (expires after 30 days - see DEPLOY.md)
+#   propmanage-cache     Key Value    - Redis-compatible, Celery broker + Channels
+#
+# Cross-service references wire the URLs/CORS automatically - nothing is
+# hardcoded. Secrets: SECRET_KEY is generated, admin credentials are prompted
+# on first blueprint creation (sync: false).
+
+services:
+  # ---------------------------------------------------------------- API ----
+  - type: web
+    name: propmanage-api
+    runtime: docker
+    region: virginia
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    dockerCommand: /app/start_render.sh
+    plan: free
+    healthCheckPath: /health/
+    # Free tier does not support preDeployCommand, so migrations run when the
+    # container starts (single instance - no migration races).
+    # One-time: create the Django admin superuser from prompted env vars
+    initialDeployHook: sh -c 'if [ -n "$DJANGO_SUPERUSER_USERNAME" ] && [ -n "$DJANGO_SUPERUSER_PASSWORD" ]; then python manage.py createsuperuser --noinput; fi'
+    buildFilter:
+      paths:
+        - backend/**
+        - render.yaml
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: '0'
+      # Public hostname of this service (used for ALLOWED_HOSTS)
+      - key: ALLOWED_HOSTS
+        fromService:
+          name: propmanage-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_HOSTNAME
+      # Browser origins allowed to call the API (frontend origin)
+      - key: CORS_ALLOWED_ORIGINS
+        fromService:
+          name: propmanage-frontend
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: CSRF_TRUSTED_ORIGINS
+        fromService:
+          name: propmanage-frontend
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+      - key: COOKIE_SECURE
+        value: '1'
+      - key: RUN_MIGRATES
+        value: '1'
+      # Postgres (Render-managed connection string)
+      - key: DATABASE_URL
+        fromDatabase:
+          name: propmanage-db
+          property: connectionString
+      # Redis for Celery broker/results and Django Channels
+      - key: REDIS_URL
+        fromService:
+          name: propmanage-cache
+          type: keyvalue
+          property: connectionString
+      - key: CELERY_BROKER_URL
+        fromService:
+          name: propmanage-cache
+          type: keyvalue
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromService:
+          name: propmanage-cache
+          type: keyvalue
+          property: connectionString
+      # Django admin superuser - prompted during initial blueprint creation
+      - key: DJANGO_SUPERUSER_USERNAME
+        sync: false
+      - key: DJANGO_SUPERUSER_EMAIL
+        sync: false
+      - key: DJANGO_SUPERUSER_PASSWORD
+        sync: false
+
+  # ----------------------------------------------------------- Frontend ----
+  - type: web
+    name: propmanage-frontend
+    runtime: static
+    buildCommand: cd frontend && npm ci && VITE_API_URL="$API_BASE_URL/api/v1" npm run build
+    staticPublishPath: ./frontend/dist
+    buildFilter:
+      paths:
+        - frontend/**
+        - render.yaml
+    envVars:
+      - key: NODE_VERSION
+        value: '22'
+      # We run npm ci ourselves in buildCommand
+      - key: SKIP_INSTALL_DEPS
+        value: 'true'
+      # API base URL, baked into the JS bundle at build time
+      - key: API_BASE_URL
+        fromService:
+          name: propmanage-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
+    # React Router (BrowserRouter) deep links: serve index.html for any path
+    # that isn't an existing file (Render never rewrites over real files).
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+  # ------------------------------------------------------------- Cache -----
+  - type: keyvalue
+    name: propmanage-cache
+    plan: free
+    region: virginia
+    # Internal connections only - services reach it over Render's private network
+    ipAllowList: []
+
+# ------------------------------------------------------------- Postgres ----
+databases:
+  - name: propmanage-db
+    plan: free
+    region: virginia
+    # Match the docker-compose development database
+    postgresMajorVersion: '15'

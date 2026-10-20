@@ -15,13 +15,18 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
 from django.conf import settings
 from django.conf.urls.static import static
+from django.views.static import serve as serve_file
 from users.views import CookieTokenObtainPairView, CookieTokenRefreshView, LogoutView
 from drf_spectacular.views import SpectacularAPIView, SpectacularRedocView, SpectacularSwaggerView
+from config.health import health_check
 
 urlpatterns = [
+    # Platform health check (Render hits this before marking a deploy live)
+    path('health/', health_check, name='health-check'),
+
     path('admin/', admin.site.urls),
     
     # Auth
@@ -41,3 +46,14 @@ urlpatterns = [
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
     urlpatterns += static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
+else:
+    # Uploaded media is served through Django in production (static files are
+    # handled by WhiteNoise). On Render's free tier the filesystem is
+    # ephemeral - see DEPLOY.md for storage trade-offs.
+    urlpatterns += [
+        re_path(
+            r'^media/(?P<path>.*)$',
+            serve_file,
+            {'document_root': settings.MEDIA_ROOT},
+        ),
+    ]

@@ -49,6 +49,10 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - EMAIL_HOST=mailpit
       - EMAIL_PORT=1025
+      - REDIS_URL=redis://redis:6379/0
+      - RUN_MAKEMIGRATIONS=1
+      - RUN_MIGRATES=1
+      - RUN_COLLECTSTATIC=1
     depends_on:
       db:
         condition: service_healthy
@@ -74,6 +78,7 @@ services:
       - CELERY_RESULT_BACKEND=redis://redis:6379/0
       - EMAIL_HOST=mailpit
       - EMAIL_PORT=1025
+      - REDIS_URL=redis://redis:6379/0
     depends_on:
       db:
         condition: service_healthy

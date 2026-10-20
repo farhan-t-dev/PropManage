@@ -31,7 +31,12 @@ COPY . /app/
 
 # Copy entrypoint script and make it executable
 COPY entrypoint.sh /app/entrypoint.sh
-RUN chmod +x /app/entrypoint.sh
+COPY start_render.sh /app/start_render.sh
+RUN chmod +x /app/entrypoint.sh /app/start_render.sh
+
+# Bake collected static assets into the image (WhiteNoise serves them at runtime)
+RUN python manage.py collectstatic --noinput
 
 # Run entrypoint.sh
 ENTRYPOINT ["/app/entrypoint.sh"]
+CMD ["/app/start_render.sh"]

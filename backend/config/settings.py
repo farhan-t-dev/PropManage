@@ -4,6 +4,7 @@ Django settings for config project.
 
 import os
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -18,7 +19,26 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-bh#98-faf^%h_te4mhrla
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = int(os.environ.get('DEBUG', 1))
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost').split(',')
+ALLOWED_HOSTS = [host.strip() for host in os.environ.get('ALLOWED_HOSTS', 'localhost').split(',') if host.strip()]
+
+# Trust X-Forwarded-Proto from Render's TLS-terminating proxy so
+# request.is_secure() reflects the real scheme behind HTTPS.
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+# Comma-separated origins allowed to call this API from a browser.
+# On Render this is set to the frontend's origin, e.g.
+# https://propmanage-frontend.onrender.com
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get('CORS_ALLOWED_ORIGINS', '').split(',')
+    if origin.strip()
+] or [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+
+# Origins allowed to POST forms over HTTPS (Django admin, etc.)
+CSRF_TRUSTED_ORIGINS = list(CORS_ALLOWED_ORIGINS)
 
 
 # Application definition
@@ -84,24 +104,53 @@ ASGI_APPLICATION = 'config.asgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-if os.environ.get('DATABASE') == 'postgres':
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.postgresql',
-            'NAME': os.environ.get('SQL_DATABASE'),
-            'USER': os.environ.get('SQL_USER'),
-            'PASSWORD': os.environ.get('SQL_PASSWORD'),
-            'HOST': os.environ.get('SQL_HOST'),
-            'PORT': os.environ.get('SQL_PORT'),
+def _database_from_env():
+    """
+    Resolve database settings from, in order of precedence:
+      1. DATABASE_URL   - Render Postgres connection string (postgresql://...)
+      2. SQL_* variables - docker-compose / manual Postgres setup
+      3. sqlite fallback - bare local development
+    """
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url:
+        url = urlparse(database_url)
+        options = {}
+        query = parse_qs(url.query)
+        if 'sslmode' in query:
+            options['sslmode'] = query['sslmode'][0]
+        return {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': unquote(url.path.lstrip('/')),
+                'USER': unquote(url.username or ''),
+                'PASSWORD': unquote(url.password or ''),
+                'HOST': url.hostname or '',
+                'PORT': str(url.port or 5432),
+                'OPTIONS': options,
+            }
         }
-    }
-else:
-    DATABASES = {
+
+    if os.environ.get('DATABASE') == 'postgres':
+        return {
+            'default': {
+                'ENGINE': 'django.db.backends.postgresql',
+                'NAME': os.environ.get('SQL_DATABASE'),
+                'USER': os.environ.get('SQL_USER'),
+                'PASSWORD': os.environ.get('SQL_PASSWORD'),
+                'HOST': os.environ.get('SQL_HOST'),
+                'PORT': os.environ.get('SQL_PORT'),
+            }
+        }
+
+    return {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
             'NAME': BASE_DIR / 'db.sqlite3',
         }
     }
+
+
+DATABASES = _database_from_env()
 
 
 # Password validation
@@ -140,9 +189,17 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-STATICFILES_DIRS = [
-    os.path.join(BASE_DIR, 'static'),
-]
+
+# WhiteNoise serves collected static files (admin, API docs) directly from
+# the ASGI process in production — no separate web server required.
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+    },
+    'staticfiles': {
+        'BACKEND': 'whitenoise.storage.CompressedManifestStaticFilesStorage',
+    },
+}
 
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
@@ -172,6 +229,10 @@ REST_FRAMEWORK = {
 }
 
 from datetime import timedelta
+
+# Mark cookies Secure when serving over HTTPS (COOKIE_SECURE=1 on Render).
+_cookie_secure = bool(int(os.environ.get('COOKIE_SECURE', '0')))
+
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(minutes=60),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=1),
@@ -179,28 +240,64 @@ SIMPLE_JWT = {
     'AUTH_COOKIE': 'access_token',
     'AUTH_COOKIE_REFRESH': 'refresh_token',
     'AUTH_COOKIE_DOMAIN': None,
-    'AUTH_COOKIE_SECURE': False,
+    'AUTH_COOKIE_SECURE': _cookie_secure,
     'AUTH_COOKIE_HTTP_ONLY' : True,
     'AUTH_COOKIE_PATH': '/',
     'AUTH_COOKIE_SAMESITE': 'Lax',
 }
 
-# CORS Config
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-]
+# CORS Config (CORS_ALLOWED_ORIGINS is resolved from the environment near the
+# top of this file so it can be pointed at the Render frontend origin).
 CORS_ALLOW_CREDENTIALS = True
+
+SESSION_COOKIE_SECURE = _cookie_secure
+CSRF_COOKIE_SECURE = _cookie_secure
+
+# Email - console backend unless an SMTP host is configured (Mailpit in
+# docker-compose, a real email provider on Render).
+if os.environ.get('EMAIL_HOST'):
+    EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+    EMAIL_HOST = os.environ.get('EMAIL_HOST')
+    EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '1025'))
+    EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
+    EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+    EMAIL_USE_TLS = bool(int(os.environ.get('EMAIL_USE_TLS', '0')))
+else:
+    EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
 
 # Celery Config
 CELERY_BROKER_URL = os.environ.get("CELERY_BROKER_URL", "redis://redis:6379/0")
 CELERY_RESULT_BACKEND = os.environ.get("CELERY_RESULT_BACKEND", "redis://redis:6379/0")
 
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {
-            "hosts": [(os.environ.get('REDIS_HOST', 'redis'), 6379)],
+
+def _redis_channel_hosts():
+    """Parse REDIS_URL (Render Key Value / docker-compose) for channels_redis."""
+    redis_url = os.environ.get('REDIS_URL')
+    if not redis_url:
+        return None
+    url = urlparse(redis_url)
+    hosts = [{
+        'host': url.hostname,
+        'port': url.port or 6379,
+        'db': int(url.path.strip('/') or '0'),
+    }]
+    if url.username:
+        hosts[0]['username'] = unquote(url.username)
+    if url.password:
+        hosts[0]['password'] = unquote(url.password)
+    return hosts
+
+
+_redis_hosts = _redis_channel_hosts()
+if _redis_hosts:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {'hosts': _redis_hosts},
         },
-    },
-}
+    }
+else:
+    # Single-process fallback for local development without Redis.
+    CHANNEL_LAYERS = {
+        'default': {'BACKEND': 'channels.layers.InMemoryChannelLayer'},
+    }
